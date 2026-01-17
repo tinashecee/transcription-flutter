@@ -1,10 +1,10 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../../app/providers.dart';
-import '../../data/providers.dart';
 import '../../services/auth_session.dart';
 
 class AudioPlayerState {
@@ -57,62 +57,109 @@ class AudioPlayerController extends StateNotifier<AudioPlayerState> {
 
   final Ref _ref;
   final AudioPlayer _player = AudioPlayer();
+  bool _isAvailable = true;
 
   Future<void> loadRecording(String audioPath) async {
-    final config = _ref.read(appConfigProvider);
-    final session = _ref.read(authSessionProvider);
-    final token = session.token;
-    final uri = Uri.parse('${config.audioBaseUrl}$audioPath');
-    await _player.setAudioSource(
-      AudioSource.uri(
-        uri,
-        headers: token == null ? null : {'Authorization': 'Bearer $token'},
-      ),
-    );
+    if (!_isAvailable) return;
+    try {
+      final config = _ref.read(appConfigProvider);
+      final session = _ref.read(authSessionProvider);
+      final token = session.token;
+      final uri = Uri.parse('${config.audioBaseUrl}$audioPath');
+      await _player.setAudioSource(
+        AudioSource.uri(
+          uri,
+          headers: token == null ? null : {'Authorization': 'Bearer $token'},
+        ),
+      );
+    } on MissingPluginException catch (_) {
+      _isAvailable = false;
+    }
   }
 
   Future<void> playPause() async {
-    if (_player.playing) {
-      await _player.pause();
-    } else {
-      await _player.play();
+    if (!_isAvailable) return;
+    try {
+      if (_player.playing) {
+        await _player.pause();
+      } else {
+        await _player.play();
+      }
+    } on MissingPluginException catch (_) {
+      _isAvailable = false;
     }
   }
 
   Future<void> rewind({int seconds = 5}) async {
-    final target = state.position - Duration(seconds: seconds);
-    await _player.seek(target < Duration.zero ? Duration.zero : target);
+    if (!_isAvailable) return;
+    try {
+      final target = state.position - Duration(seconds: seconds);
+      await _player.seek(target < Duration.zero ? Duration.zero : target);
+    } on MissingPluginException catch (_) {
+      _isAvailable = false;
+    }
   }
 
   Future<void> forward({int seconds = 5}) async {
-    final target = state.position + Duration(seconds: seconds);
-    await _player.seek(target);
+    if (!_isAvailable) return;
+    try {
+      final target = state.position + Duration(seconds: seconds);
+      await _player.seek(target);
+    } on MissingPluginException catch (_) {
+      _isAvailable = false;
+    }
   }
 
   Future<void> setSpeed(double speed) async {
-    await _player.setSpeed(speed);
-    state = state.copyWith(speed: speed);
+    if (!_isAvailable) return;
+    try {
+      await _player.setSpeed(speed);
+      state = state.copyWith(speed: speed);
+    } on MissingPluginException catch (_) {
+      _isAvailable = false;
+    }
   }
 
   Future<void> seek(Duration position) async {
-    await _player.seek(position);
+    if (!_isAvailable) return;
+    try {
+      await _player.seek(position);
+    } on MissingPluginException catch (_) {
+      _isAvailable = false;
+    }
   }
 
   Future<void> pressPlay() async {
-    if (!_player.playing) {
-      await _player.play();
+    if (!_isAvailable) return;
+    try {
+      if (!_player.playing) {
+        await _player.play();
+      }
+    } on MissingPluginException catch (_) {
+      _isAvailable = false;
     }
   }
 
   Future<void> releasePlay() async {
-    if (_player.playing) {
-      await _player.pause();
+    if (!_isAvailable) return;
+    try {
+      if (_player.playing) {
+        await _player.pause();
+      }
+    } on MissingPluginException catch (_) {
+      _isAvailable = false;
     }
   }
 
   @override
   void dispose() {
-    _player.dispose();
+    if (_isAvailable) {
+      try {
+        _player.dispose();
+      } on MissingPluginException catch (_) {
+        _isAvailable = false;
+      }
+    }
     super.dispose();
   }
 }

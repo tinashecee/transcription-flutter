@@ -16,13 +16,16 @@ class AppShortcuts extends ConsumerStatefulWidget {
   ConsumerState<AppShortcuts> createState() => _AppShortcutsState();
 }
 
-class _AppShortcutsState extends ConsumerState<AppShortcuts> {
+class _AppShortcutsState extends ConsumerState<AppShortcuts>
+    with WidgetsBindingObserver {
   late final FootPedalService _footPedalService;
   StreamSubscription<FootPedalEvent>? _subscription;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _clearKeyboardState();
     try {
       _footPedalService = FootPedalService()..start();
       _subscription = _footPedalService.events.listen(_handlePedal);
@@ -33,10 +36,27 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed ||
+        state == AppLifecycleState.inactive) {
+      _clearKeyboardState();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _subscription?.cancel();
     _footPedalService.dispose();
     super.dispose();
+  }
+
+  void _clearKeyboardState() {
+    // clearState is restricted; use a no-op try block to avoid crashes on bad key states
+    try {
+      // ignore: invalid_use_of_visible_for_testing_member
+      HardwareKeyboard.instance.clearState();
+    } catch (_) {}
   }
 
   void _handlePedal(FootPedalEvent event) {
@@ -106,6 +126,11 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts> {
         },
         child: Focus(
           autofocus: true,
+                      onFocusChange: (hasFocus) {
+                        if (!hasFocus) {
+                          _clearKeyboardState();
+                        }
+                      },
           child: widget.child,
         ),
       ),

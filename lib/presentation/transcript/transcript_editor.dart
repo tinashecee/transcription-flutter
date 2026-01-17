@@ -42,70 +42,81 @@ class _TranscriptEditorState extends ConsumerState<TranscriptEditor> {
 
     return Column(
       children: [
-        Row(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            FleatherToolbar.basic(controller: state.controller),
-            const Spacer(),
-            TextButton.icon(
-              onPressed: () {
-                final position =
-                    ref.read(audioPlayerControllerProvider).position;
-                final timestamp = _formatTimestamp(position);
-                final selection = state.controller.selection;
-                final index = selection.baseOffset;
-                state.controller.replaceText(
-                  index,
-                  0,
-                  '[$timestamp] ',
-                );
-              },
-              icon: const Icon(Icons.access_time),
-              label: const Text('Insert timestamp'),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: FleatherToolbar.basic(controller: state.controller),
             ),
-            TextButton.icon(
-              onPressed: () async {
-                final location = await getSaveLocation(
-                  acceptedTypeGroups: [
-                    const XTypeGroup(
-                      label: 'HTML',
-                      extensions: ['html'],
-                    ),
-                  ],
-                );
-                if (location == null) return;
-                final parchmentDelta = state.controller.document.toDelta();
-                final html = dq.Delta.fromJson(parchmentDelta.toJson()).toHtml();
-                await File(location.path).writeAsString(html);
-              },
-              icon: const Icon(Icons.download),
-              label: const Text('Export HTML'),
-            ),
-            TextButton.icon(
-              onPressed: () async {
-                final location = await getSaveLocation(
-                  acceptedTypeGroups: [
-                    const XTypeGroup(
-                      label: 'Text',
-                      extensions: ['txt'],
-                    ),
-                  ],
-                );
-                if (location == null) return;
-                final text = state.controller.document.toPlainText();
-                await File(location.path).writeAsString(text);
-              },
-              icon: const Icon(Icons.description),
-              label: const Text('Export Text'),
-            ),
-            TextButton.icon(
-              onPressed: state.isSaving ? null : controller.save,
-              icon: const Icon(Icons.save),
-              label: const Text('Save'),
-            ),
-            TextButton.icon(
-              onPressed: controller.retranscribe,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retranscribe'),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _ActionIconButton(
+                  tooltip: 'Insert timestamp',
+                  icon: Icons.access_time,
+                  onPressed: () {
+                    final position =
+                        ref.read(audioPlayerControllerProvider).position;
+                    final timestamp = _formatTimestamp(position);
+                    final selection = state.controller.selection;
+                    final index = selection.baseOffset;
+                    state.controller.replaceText(
+                      index,
+                      0,
+                      '[$timestamp] ',
+                    );
+                  },
+                ),
+                _ActionIconButton(
+                  tooltip: 'Export HTML',
+                  icon: Icons.download,
+                  onPressed: () async {
+                    final location = await getSaveLocation(
+                      acceptedTypeGroups: [
+                        const XTypeGroup(
+                          label: 'HTML',
+                          extensions: ['html'],
+                        ),
+                      ],
+                    );
+                    if (location == null) return;
+                    final parchmentDelta = state.controller.document.toDelta();
+                    final html =
+                        dq.Delta.fromJson(parchmentDelta.toJson()).toHtml();
+                    await File(location.path).writeAsString(html);
+                  },
+                ),
+                _ActionIconButton(
+                  tooltip: 'Export Text',
+                  icon: Icons.description,
+                  onPressed: () async {
+                    final location = await getSaveLocation(
+                      acceptedTypeGroups: [
+                        const XTypeGroup(
+                          label: 'Text',
+                          extensions: ['txt'],
+                        ),
+                      ],
+                    );
+                    if (location == null) return;
+                    final text = state.controller.document.toPlainText();
+                    await File(location.path).writeAsString(text);
+                  },
+                ),
+                _ActionIconButton(
+                  tooltip: 'Save',
+                  icon: Icons.save,
+                  onPressed: state.isSaving ? null : controller.save,
+                ),
+                _ActionIconButton(
+                  tooltip: 'Retranscribe',
+                  icon: Icons.refresh,
+                  onPressed: controller.retranscribe,
+                ),
+              ],
             ),
           ],
         ),
@@ -135,5 +146,30 @@ class _TranscriptEditorState extends ConsumerState<TranscriptEditor> {
     final minutes = two(duration.inMinutes.remainder(60));
     final secs = two(duration.inSeconds.remainder(60));
     return '$hours:$minutes:$secs';
+  }
+}
+
+class _ActionIconButton extends StatelessWidget {
+  const _ActionIconButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: IconButton(
+        onPressed: onPressed,
+        icon: Icon(icon),
+        color: const Color(0xFF115343),
+        splashRadius: 20,
+      ),
+    );
   }
 }

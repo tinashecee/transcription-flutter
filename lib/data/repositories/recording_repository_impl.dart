@@ -189,7 +189,7 @@ class RecordingRepositoryImpl implements RecordingRepository {
   @override
   Future<Recording> fetchRecording(String id) async {
     final response = await _client.dio.get<Map<String, dynamic>>(
-      '/api/recordings/$id',
+      '/recordings/$id',
     );
     final data = response.data;
     if (data == null) {
