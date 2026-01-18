@@ -28,9 +28,33 @@ class _RecordingsScreenState extends ConsumerState<RecordingsScreen> {
   void initState() {
     super.initState();
     
-    // Auto-check for updates on dashboard load
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      UpdateManager.checkForUpdatesAndPrompt(context);
+    // Auto-check for updates in background on dashboard load
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final hasUpdate = await UpdateManager.checkForUpdatesBackground();
+      if (hasUpdate && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.system_update, color: Colors.white, size: 20),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text('A new version is available! Tap the update icon to install.'),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFF115343),
+            duration: const Duration(seconds: 6),
+            action: SnackBarAction(
+              label: 'VIEW',
+              textColor: Colors.white,
+              onPressed: () {
+                context.go('/system');
+              },
+            ),
+          ),
+        );
+      }
     });
   }
 
@@ -116,11 +140,25 @@ class _RecordingsScreenState extends ConsumerState<RecordingsScreen> {
                   const Spacer(),
 
                   // Action buttons
-                  IconButton(
-                    icon: const Icon(Icons.system_update, color: Colors.white),
-                    tooltip: 'System Status & Updates',
-                    onPressed: () {
-                      context.go('/system');
+                  StreamBuilder<bool>(
+                    stream: UpdateManager.updateAvailableStream,
+                    initialData: UpdateManager.isUpdateAvailable,
+                    builder: (context, snapshot) {
+                      final hasUpdate = snapshot.data ?? false;
+                      return Badge(
+                        isLabelVisible: hasUpdate,
+                        backgroundColor: Colors.red,
+                        offset: const Offset(8, -8),
+                        child: IconButton(
+                          icon: const Icon(Icons.system_update, color: Colors.white),
+                          tooltip: hasUpdate 
+                              ? 'New update available! Click to view'
+                              : 'System Status & Updates',
+                          onPressed: () {
+                            context.go('/system');
+                          },
+                        ),
+                      );
                     },
                   ),
 

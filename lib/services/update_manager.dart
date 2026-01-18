@@ -39,8 +39,15 @@ class UpdateManager {
       StreamController<Map<String, dynamic>>.broadcast();
   static Stream<Map<String, dynamic>> get progressStream => _progressController.stream;
   
+  static final StreamController<bool> _updateAvailableController =
+      StreamController<bool>.broadcast();
+  static Stream<bool> get updateAvailableStream => _updateAvailableController.stream;
+  
   static DownloadStatus _downloadStatus = DownloadStatus.idle;
   static DownloadStatus get downloadStatus => _downloadStatus;
+  
+  static bool _isUpdateAvailable = false;
+  static bool get isUpdateAvailable => _isUpdateAvailable;
 
   /// Initialize the installed app version
   static Future<void> initInstalledVersion() async {
@@ -104,6 +111,31 @@ class UpdateManager {
     }
     
     return false; // Versions are equal
+  }
+
+  /// Check for updates silently in the background (no UI)
+  static Future<bool> checkForUpdatesBackground() async {
+    if (!Platform.isWindows) return false;
+
+    final updateInfo = await fetchUpdateInfo();
+    if (updateInfo == null) {
+      print('[UpdateManager] No update info available');
+      _isUpdateAvailable = false;
+      _updateAvailableController.add(false);
+      return false;
+    }
+
+    final hasUpdate = isNewer(updateInfo.version);
+    _isUpdateAvailable = hasUpdate;
+    _updateAvailableController.add(hasUpdate);
+    
+    if (hasUpdate) {
+      print('[UpdateManager] Update available: ${updateInfo.version}');
+    } else {
+      print('[UpdateManager] Already up to date');
+    }
+    
+    return hasUpdate;
   }
 
   /// Check for updates and show prompt dialog if available
@@ -232,8 +264,13 @@ class UpdateManager {
       
       print('[UpdateManager] Download complete: $filePath');
       
-      // Show installation prompt
-      if (!context.mounted) return;
+      // Show installation prompt or auto-install if context lost
+      if (!context.mounted) {
+        // Fallback: if the original context is gone (user navigated), auto-install
+        print('[UpdateManager] Context not mounted after download; auto-launching installer');
+        await _runInstallerAndExit(filePath);
+        return;
+      }
       
       showDialog(
         context: context,
@@ -279,12 +316,13 @@ class UpdateManager {
   /// Run the installer and exit the app
   static Future<void> _runInstallerAndExit(String exePath) async {
     try {
-      print('[UpdateManager] Launching installer: $exePath');
+      print('[UpdateManager] Starting installer process...');
       await Process.start(exePath, [], mode: ProcessStartMode.detached);
-      exit(0);
     } catch (e) {
       print('[UpdateManager] Failed to launch installer: $e');
     }
+    // Always exit, even if Process.start failed
+    exit(0);
   }
 
   /// Manual update check (for update page)
