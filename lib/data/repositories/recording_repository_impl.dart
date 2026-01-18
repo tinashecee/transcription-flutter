@@ -4,26 +4,21 @@ import 'package:intl/intl.dart';
 import '../../domain/entities/recording.dart';
 import '../../domain/repositories/recording_repository.dart';
 import '../api/api_client.dart';
-import '../cache/session_cache.dart';
-import '../cache/ttl_cache.dart';
 import '../models/recording_model.dart';
 
+/// Recording repository - NO CACHING. All operations fetch fresh from API.
 class RecordingRepositoryImpl implements RecordingRepository {
-  RecordingRepositoryImpl(this._client)
-      : _courtsCache = TtlCache<List<String>>(const Duration(minutes: 5)),
-        _courtroomsCache = TtlCache<List<String>>(const Duration(minutes: 5)),
-        _courtroomsByCourtCache =
-            TtlCache<Map<String, List<String>>>(const Duration(minutes: 5));
+  RecordingRepositoryImpl(this._client);
 
   final ApiClient _client;
-  final SessionCache<List<Recording>> _sessionCache = SessionCache();
-  final TtlCache<List<String>> _courtsCache;
-  final TtlCache<List<String>> _courtroomsCache;
-  final TtlCache<Map<String, List<String>>> _courtroomsByCourtCache;
+  
+  // Courts/courtrooms can be cached since they rarely change
+  List<String>? _courtsCache;
+  Map<String, List<String>>? _courtroomsByCourtCache;
 
   Future<List<String>> fetchCourts() async {
-    final cached = _courtsCache.get('courts');
-    if (cached != null) return cached;
+    // Courts can be cached - they rarely change
+    if (_courtsCache != null) return _courtsCache!;
     final response = await _client.dio.get<dynamic>('/courts');
     final raw = response.data;
     final list = raw is List
@@ -33,14 +28,12 @@ class RecordingRepositoryImpl implements RecordingRepository {
         .map((e) => e is Map<String, dynamic> ? e['court_name'] : e)
         .map((e) => e.toString())
         .toList();
-    _courtsCache.set('courts', courts);
+    _courtsCache = courts;
     return courts;
   }
 
   Future<List<String>> fetchCourtrooms(String court) async {
-    final key = 'courtrooms:$court';
-    final cached = _courtroomsCache.get(key);
-    if (cached != null) return cached;
+    // Fetch fresh - courtrooms are part of the by_court map
     final response = await _client.dio.get<dynamic>('/courtrooms');
     final raw = response.data;
     final list = raw is List
@@ -50,13 +43,12 @@ class RecordingRepositoryImpl implements RecordingRepository {
         .map((e) => e is Map<String, dynamic> ? e['courtroom_name'] : e)
         .map((e) => e.toString())
         .toList();
-    _courtroomsCache.set(key, rooms);
     return rooms;
   }
 
   Future<Map<String, List<String>>> fetchCourtroomsByCourt() async {
-    final cached = _courtroomsByCourtCache.get('courtrooms_by_court');
-    if (cached != null) return cached;
+    // Courtrooms by court can be cached - they rarely change
+    if (_courtroomsByCourtCache != null) return _courtroomsByCourtCache!;
     final response = await _client.dio.get<dynamic>('/courtrooms');
     final raw = response.data;
     final list = raw is List
@@ -74,7 +66,7 @@ class RecordingRepositoryImpl implements RecordingRepository {
     for (final entry in map.entries) {
       entry.value.sort();
     }
-    _courtroomsByCourtCache.set('courtrooms_by_court', map);
+    _courtroomsByCourtCache = map;
     return map;
   }
 
@@ -85,17 +77,12 @@ class RecordingRepositoryImpl implements RecordingRepository {
     required RecordingFilters filters,
     String? userId,
   }) async {
+    // NO CACHING - Always fetch fresh from API
     print(
-      '[RecordingRepo] fetchRecordings page=$page size=$pageSize tab=${filters.tab.name} '
+      '[RecordingRepo] fetchRecordings (NO CACHE) page=$page size=$pageSize tab=${filters.tab.name} '
       'court=${filters.court} courtroom=${filters.courtroom} '
       'query=${filters.query} from=${filters.fromDate} to=${filters.toDate} userId=$userId',
     );
-    final key = _cacheKey(page, pageSize, filters, userId);
-    final cached = _sessionCache.get(key);
-    if (cached != null) {
-      print('[RecordingRepo] cache hit key=$key count=${cached.length}');
-      return cached;
-    }
 
     final useUserEndpoint = filters.tab != RecordingTab.all;
     if (useUserEndpoint && (userId == null || userId.isEmpty)) {
@@ -135,7 +122,6 @@ class RecordingRepositoryImpl implements RecordingRepository {
             .map((json) => RecordingModel.fromJson(json as Map<String, dynamic>))
             .map((model) => model.toEntity())
             .toList();
-        _sessionCache.set(key, items);
         return items;
       }
       final courtEndpoint = '/recordings/by_court/$encodedCourt';
@@ -148,7 +134,6 @@ class RecordingRepositoryImpl implements RecordingRepository {
           .map((json) => RecordingModel.fromJson(json as Map<String, dynamic>))
           .map((model) => model.toEntity())
           .toList();
-      _sessionCache.set(key, items);
       return items;
     }
 
@@ -182,7 +167,6 @@ class RecordingRepositoryImpl implements RecordingRepository {
       'total=${response.data?['total']} '
       'has_more=${response.data?['has_more']}',
     );
-    _sessionCache.set(key, items);
     return items;
   }
 
@@ -201,22 +185,4 @@ class RecordingRepositoryImpl implements RecordingRepository {
     return RecordingModel.fromJson(data).toEntity();
   }
 
-  String _cacheKey(
-    int page,
-    int pageSize,
-    RecordingFilters filters,
-    String? userId,
-  ) {
-    return [
-      'page=$page',
-      'size=$pageSize',
-      'court=${filters.court ?? ''}',
-      'courtroom=${filters.courtroom ?? ''}',
-      'query=${filters.query ?? ''}',
-      'from=${filters.fromDate?.toIso8601String() ?? ''}',
-      'to=${filters.toDate?.toIso8601String() ?? ''}',
-      'tab=${filters.tab.name}',
-      'userId=${userId ?? ''}',
-    ].join('&');
-  }
 }

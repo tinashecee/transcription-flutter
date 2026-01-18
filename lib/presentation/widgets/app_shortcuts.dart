@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../services/foot_pedal_service.dart';
 import '../player/audio_player_controller.dart';
+import '../../app/providers.dart';
 
 class AppShortcuts extends ConsumerStatefulWidget {
   const AppShortcuts({super.key, required this.child});
@@ -18,7 +19,6 @@ class AppShortcuts extends ConsumerStatefulWidget {
 
 class _AppShortcutsState extends ConsumerState<AppShortcuts>
     with WidgetsBindingObserver {
-  late final FootPedalService _footPedalService;
   StreamSubscription<FootPedalEvent>? _subscription;
 
   @override
@@ -27,8 +27,9 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts>
     WidgetsBinding.instance.addObserver(this);
     _clearKeyboardState();
     try {
-      _footPedalService = FootPedalService()..start();
-      _subscription = _footPedalService.events.listen(_handlePedal);
+      final service = ref.read(footPedalServiceProvider);
+      service.start();
+      _subscription = service.events.listen(_handlePedal);
     } catch (e) {
       // Foot pedal service is optional - silently fail if not available
       print('Foot pedal service initialization failed: $e');
@@ -47,7 +48,6 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _subscription?.cancel();
-    _footPedalService.dispose();
     super.dispose();
   }
 

@@ -25,6 +25,13 @@ class ApiClient {
           }
           return handler.next(options);
         },
+        onError: (error, handler) {
+          final method = error.requestOptions.method;
+          final uri = error.requestOptions.uri;
+          final status = error.response?.statusCode;
+          print('[ApiClient] $method $uri -> $status');
+          return handler.next(error);
+        },
       ),
     );
   }

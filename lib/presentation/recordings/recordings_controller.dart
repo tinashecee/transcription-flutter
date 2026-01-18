@@ -4,6 +4,7 @@ import '../../data/providers.dart';
 import '../../services/auth_session.dart';
 import '../../domain/entities/recording.dart';
 import '../../domain/repositories/recording_repository.dart';
+import '../../services/dio_error_mapper.dart';
 
 class RecordingsState {
   RecordingsState({
@@ -51,7 +52,15 @@ class RecordingsController extends StateNotifier<RecordingsState> {
   static const _pageSize = 20;
 
   Future<void> loadInitial() async {
-    state = state.copyWith(isLoading: true, errorMessage: null, page: 1);
+    // Clear current state completely before fetching fresh from API
+    state = RecordingsState(
+      items: const [], // Clear all items
+      isLoading: true,
+      page: 1,
+      filters: state.filters,
+      errorMessage: null,
+    );
+    print('[RecordingsController] State cleared, fetching fresh from API...');
     await _load(page: 1, replace: true);
   }
 
@@ -125,7 +134,7 @@ class RecordingsController extends StateNotifier<RecordingsState> {
       print('[RecordingsController] load error: $error');
       state = state.copyWith(
         isLoading: false,
-        errorMessage: error.toString(),
+        errorMessage: mapDioError(error),
       );
     }
   }

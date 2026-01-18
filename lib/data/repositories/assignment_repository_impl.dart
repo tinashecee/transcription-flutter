@@ -3,30 +3,19 @@ import '../../domain/entities/assigned_user.dart';
 import '../../domain/entities/user.dart';
 import '../../domain/repositories/assignment_repository.dart';
 import '../api/api_client.dart';
-import '../cache/ttl_cache.dart';
 import '../models/assigned_user_model.dart';
 import '../models/assignment_model.dart';
+import 'package:dio/dio.dart';
 
+/// Assignment repository - NO CACHING. All operations fetch fresh from API.
 class AssignmentRepositoryImpl implements AssignmentRepository {
-  AssignmentRepositoryImpl(this._client)
-      : _assignmentsCache = TtlCache<List<Assignment>>(
-          const Duration(seconds: 30),
-        ),
-        _assignedUsersCache = TtlCache<List<AssignedUser>>(
-          const Duration(seconds: 30),
-        ),
-        _usersByEmailCache = TtlCache<Map<String, String>>(
-          const Duration(minutes: 5),
-        ),
-        _availableUsersCache = TtlCache<List<User>>(
-          const Duration(minutes: 5),
-        );
+  AssignmentRepositoryImpl(this._client);
 
   final ApiClient _client;
-  final TtlCache<List<Assignment>> _assignmentsCache;
-  final TtlCache<List<AssignedUser>> _assignedUsersCache;
-  final TtlCache<Map<String, String>> _usersByEmailCache;
-  final TtlCache<List<User>> _availableUsersCache;
+  
+  // Users list can be cached since it rarely changes during a session
+  List<User>? _availableUsersCache;
+  Map<String, String>? _usersByEmailCache;
 
   @override
   Future<void> assignRecording(
@@ -34,51 +23,64 @@ class AssignmentRepositoryImpl implements AssignmentRepository {
     required String userId,
     String type = 'self_assigned',
   }) async {
-    await _client.dio.post(
+    print('[AssignmentRepo] POST /add_transcription_user case_id=$recordingId user_id=$userId type=$type');
+    final response = await _client.dio.post(
       '/add_transcription_user',
       data: {
         'case_id': recordingId,
         'user_id': userId,
+        'date_assigned': DateTime.now().toIso8601String(),
         'type': type,
       },
     );
-    _assignmentsCache.clear();
-    _assignedUsersCache.clear();
+    print('[AssignmentRepo] assignRecording response: ${response.statusCode}');
   }
 
   @override
   Future<void> unassignRecording(String recordingId, {required String userId}) async {
+    print('[AssignmentRepo] unassignRecording recordingId=$recordingId userId=$userId');
     // Find assignment id for this user + case
     final assignmentsResponse = await _client.dio.get<List<dynamic>>(
       '/transcription_users/$recordingId',
     );
     final assignments = assignmentsResponse.data ?? const [];
+    print('[AssignmentRepo] found ${assignments.length} assignments for case $recordingId');
     final match = assignments.cast<Map<String, dynamic>>().firstWhere(
           (a) => a['user_id']?.toString() == userId,
           orElse: () => <String, dynamic>{},
         );
     final assignmentId = match['id']?.toString();
     if (assignmentId == null || assignmentId.isEmpty) {
+      print('[AssignmentRepo] no matching assignment found for userId=$userId');
       return;
     }
-    await _client.dio.delete('/transcription_users/$assignmentId');
-    _assignmentsCache.clear();
-    _assignedUsersCache.clear();
+    print('[AssignmentRepo] DELETE /transcription_users/$assignmentId');
+    final deleteResponse = await _client.dio.delete('/transcription_users/$assignmentId');
+    print('[AssignmentRepo] unassignRecording response: ${deleteResponse.statusCode}');
   }
 
   @override
   Future<Assignment?> getAssignment(String recordingId) async {
-    final response =
-        await _client.dio.get<Map<String, dynamic>>('/api/assignments/$recordingId');
-    final data = response.data;
-    if (data == null) return null;
-    return AssignmentModel.fromJson(data).toEntity();
+    try {
+      final response =
+          await _client.dio.get<Map<String, dynamic>>('/api/assignments/$recordingId');
+      final data = response.data;
+      if (data == null) return null;
+      return AssignmentModel.fromJson(data).toEntity();
+    } on DioException catch (error) {
+      final status = error.response?.statusCode;
+      if (status == 404) {
+        print('[AssignmentRepository] getAssignment 404 for $recordingId');
+        return null;
+      }
+      rethrow;
+    }
   }
 
   @override
   Future<List<Assignment>> getMyAssignments() async {
-    final cached = _assignmentsCache.get('my_assignments');
-    if (cached != null) return cached;
+    // NO CACHING - Always fetch fresh
+    print('[AssignmentRepo] GET /api/my-assignments (NO CACHE)');
     final response =
         await _client.dio.get<List<dynamic>>('/api/my-assignments');
     final items = response.data
@@ -86,16 +88,14 @@ class AssignmentRepositoryImpl implements AssignmentRepository {
             .map((model) => model.toEntity())
             .toList() ??
         [];
-    _assignmentsCache.set('my_assignments', items);
+    print('[AssignmentRepo] getMyAssignments returned ${items.length} items');
     return items;
   }
 
   @override
   Future<List<AssignedUser>> getAssignedUsers(String recordingId) async {
-    final cacheKey = 'assigned_users:$recordingId';
-    final cached = _assignedUsersCache.get(cacheKey);
-    if (cached != null) return cached;
-
+    // NO CACHING - Always fetch fresh
+    print('[AssignmentRepo] GET /transcription_users/$recordingId (NO CACHE)');
     final response = await _client.dio.get<List<dynamic>>(
       '/transcription_users/$recordingId',
     );
@@ -126,21 +126,22 @@ class AssignmentRepositoryImpl implements AssignmentRepository {
         );
       }).toList();
     }
-    _assignedUsersCache.set(cacheKey, items);
+    print('[AssignmentRepo] getAssignedUsers returned ${items.length} items');
     return items;
   }
 
   @override
   Future<void> deleteAssignment(String assignmentId) async {
-    await _client.dio.delete('/transcription_users/$assignmentId');
-    _assignmentsCache.clear();
-    _assignedUsersCache.clear();
+    print('[AssignmentRepo] DELETE /transcription_users/$assignmentId');
+    final response = await _client.dio.delete('/transcription_users/$assignmentId');
+    print('[AssignmentRepo] deleteAssignment response: ${response.statusCode}');
   }
 
   @override
   Future<List<User>> getAvailableUsers() async {
-    final cached = _availableUsersCache.get('available_users');
-    if (cached != null) return cached;
+    // Users list can be cached - it's reference data that rarely changes
+    if (_availableUsersCache != null) return _availableUsersCache!;
+    print('[AssignmentRepo] GET /users');
     final response = await _client.dio.get<List<dynamic>>('/users');
     final items = response.data
             ?.map((json) => json as Map<String, dynamic>)
@@ -157,13 +158,14 @@ class AssignmentRepositoryImpl implements AssignmentRepository {
             .where((user) => _isAssignableRole(user.role))
             .toList() ??
         [];
-    _availableUsersCache.set('available_users', items);
+    _availableUsersCache = items;
+    print('[AssignmentRepo] getAvailableUsers returned ${items.length} users');
     return items;
   }
 
   Future<Map<String, String>> _getUsersByEmail() async {
-    final cached = _usersByEmailCache.get('users_by_email');
-    if (cached != null) return cached;
+    // Users by email can be cached - it's reference data
+    if (_usersByEmailCache != null) return _usersByEmailCache!;
     try {
       final response = await _client.dio.get<List<dynamic>>('/users');
       final map = <String, String>{};
@@ -174,23 +176,22 @@ class AssignmentRepositoryImpl implements AssignmentRepository {
         final name = (data['name'] as String?)?.trim();
         map[email] = (name == null || name.isEmpty) ? email : name;
       }
-      _usersByEmailCache.set('users_by_email', map);
+      _usersByEmailCache = map;
       return map;
     } catch (_) {
-      _usersByEmailCache.set('users_by_email', const {});
+      _usersByEmailCache = const {};
       return const {};
     }
   }
 
   @override
   Future<void> bulkAssign(List<String> recordingIds) async {
-    await _client.dio.post(
+    print('[AssignmentRepo] POST /api/assignments/bulk ids=${recordingIds.length}');
+    final response = await _client.dio.post(
       '/api/assignments/bulk',
       data: {'recording_ids': recordingIds},
     );
-    _assignmentsCache.clear();
-    _assignedUsersCache.clear();
-    _availableUsersCache.clear();
+    print('[AssignmentRepo] bulkAssign response: ${response.statusCode}');
   }
 
   bool _isAssignableRole(String role) {

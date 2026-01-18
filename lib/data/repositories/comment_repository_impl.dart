@@ -10,8 +10,8 @@ class CommentRepositoryImpl implements CommentRepository {
 
   @override
   Future<List<Comment>> listComments(String recordingId) async {
-    final response =
-        await _client.dio.get<List<dynamic>>('/api/comments/$recordingId');
+    final response = await _client.dio
+        .get<List<dynamic>>('/transcript_comments/$recordingId');
     return response.data
             ?.map((json) => CommentModel.fromJson(json as Map<String, dynamic>))
             .map((model) => model.toEntity())
@@ -22,33 +22,19 @@ class CommentRepositoryImpl implements CommentRepository {
   @override
   Future<Comment> createComment({
     required String recordingId,
-    required String body,
-    required int timestampSeconds,
+    required String content,
+    required String commentType,
+    required String commenterId,
   }) async {
     final response = await _client.dio.post<Map<String, dynamic>>(
-      '/api/comments/$recordingId',
+      '/add_transcription_comment',
       data: {
-        'body': body,
-        'timestamp_seconds': timestampSeconds,
+        'case_id': int.parse(recordingId),
+        'commenter': int.parse(commenterId),
+        'comment_type': commentType,
+        'comment_text': content,
       },
     );
     return CommentModel.fromJson(response.data ?? {}).toEntity();
-  }
-
-  @override
-  Future<Comment> updateComment({
-    required String commentId,
-    required String body,
-  }) async {
-    final response = await _client.dio.put<Map<String, dynamic>>(
-      '/api/comments/$commentId',
-      data: {'body': body},
-    );
-    return CommentModel.fromJson(response.data ?? {}).toEntity();
-  }
-
-  @override
-  Future<void> deleteComment(String commentId) async {
-    await _client.dio.delete('/api/comments/$commentId');
   }
 }

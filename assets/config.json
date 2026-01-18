@@ -1,4 +1,5 @@
 {
   "apiBaseUrl": "https://api.testimony.co.zw",
-  "audioBaseUrl": "https://api.testimony.co.zw"
+  "audioBaseUrl": "https://api.testimony.co.zw",
+  "pedalWebSocketUrl": "ws://127.0.0.1:8080"
 }

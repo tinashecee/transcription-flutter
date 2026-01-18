@@ -37,12 +37,15 @@ class AssignmentController extends StateNotifier<AssignmentState> {
   final Ref _ref;
 
   Future<void> load(String recordingId) async {
+    print('[AssignmentController] load recordingId=$recordingId');
     state = state.copyWith(isLoading: true, errorMessage: null);
     try {
       final assignment =
           await _ref.read(assignmentRepositoryProvider).getAssignment(recordingId);
+      print('[AssignmentController] load result=${assignment != null}');
       state = state.copyWith(isLoading: false, assignment: assignment);
     } catch (error) {
+      print('[AssignmentController] load error=$error');
       state = state.copyWith(isLoading: false, errorMessage: error.toString());
     }
   }

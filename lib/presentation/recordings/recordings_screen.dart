@@ -11,6 +11,7 @@ import '../../domain/repositories/recording_repository.dart';
 import '../../data/providers.dart';
 import '../../app/providers.dart';
 import '../../services/auth_session.dart';
+import '../../services/dio_error_mapper.dart';
 import '../auth/auth_controller.dart';
 import '../player/mini_player_bar.dart';
 import '../widgets/role_guard.dart';
@@ -31,6 +32,9 @@ class RecordingsScreen extends ConsumerWidget {
     final state = ref.watch(recordingsControllerProvider);
     final controller = ref.read(recordingsControllerProvider.notifier);
     final auth = ref.watch(authSessionProvider);
+    print('[RecordingsScreen] build items=${state.items.length} '
+        'loading=${state.isLoading} error=${state.errorMessage} '
+        'tab=${state.filters.tab.name}');
 
     return Scaffold(
       backgroundColor: const Color(0xFFF0F4F3),
@@ -395,7 +399,7 @@ class RecordingsScreen extends ConsumerWidget {
   }
 }
 
-class _RecordingTile extends ConsumerWidget {
+class _RecordingTile extends ConsumerStatefulWidget {
   const _RecordingTile({
     required this.recording,
     required this.isMyList,
@@ -405,6 +409,13 @@ class _RecordingTile extends ConsumerWidget {
   final Recording recording;
   final bool isMyList;
   final bool canAssign;
+
+  @override
+  ConsumerState<_RecordingTile> createState() => _RecordingTileState();
+}
+
+class _RecordingTileState extends ConsumerState<_RecordingTile> {
+  bool _isOperationInProgress = false;
 
   Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {
@@ -442,20 +453,102 @@ class _RecordingTile extends ConsumerWidget {
     return parts.join(' ');
   }
 
+  Future<void> _handleAddToMyList() async {
+    if (_isOperationInProgress) return;
+    
+    final userId = ref.read(authSessionProvider).user?.id;
+    if (userId == null || userId.isEmpty) {
+      await ref.read(authControllerProvider).logout();
+      return;
+    }
+
+    setState(() => _isOperationInProgress = true);
+    
+    try {
+      // Step 1: Call API and wait for response
+      print('[RecordingsScreen] POST /add_transcription_user case_id=${widget.recording.id} user_id=$userId');
+      await ref.read(assignmentRepositoryProvider).assignRecording(
+        widget.recording.id,
+        userId: userId,
+      );
+      print('[RecordingsScreen] API returned success');
+
+      // Step 2: Clear current state and reload fresh from API
+      print('[RecordingsScreen] Clearing state and reloading from API...');
+      final controller = ref.read(recordingsControllerProvider.notifier);
+      await controller.loadInitial();
+      print('[RecordingsScreen] Reload from API completed');
+      
+      // Note: No snackbar - the UI will update because we reloaded from API
+    } catch (e) {
+      print('[RecordingsScreen] API error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to add to list: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isOperationInProgress = false);
+      }
+    }
+  }
+
+  Future<void> _handleRemoveFromMyList() async {
+    if (_isOperationInProgress) return;
+    
+    final userId = ref.read(authSessionProvider).user?.id;
+    if (userId == null || userId.isEmpty) {
+      await ref.read(authControllerProvider).logout();
+      return;
+    }
+
+    setState(() => _isOperationInProgress = true);
+    
+    try {
+      // Step 1: Call API and wait for response
+      print('[RecordingsScreen] DELETE unassign case_id=${widget.recording.id} user_id=$userId');
+      await ref.read(assignmentRepositoryProvider).unassignRecording(
+        widget.recording.id,
+        userId: userId,
+      );
+      print('[RecordingsScreen] API returned success');
+
+      // Step 2: Clear current state and reload fresh from API
+      print('[RecordingsScreen] Clearing state and reloading from API...');
+      final controller = ref.read(recordingsControllerProvider.notifier);
+      await controller.loadInitial();
+      print('[RecordingsScreen] Reload from API completed');
+      
+      // Note: No snackbar - the UI will update because we reloaded from API
+    } catch (e) {
+      print('[RecordingsScreen] API error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to remove from list: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isOperationInProgress = false);
+      }
+    }
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final date = DateFormat.yMMMd().format(recording.date);
-    final status = (recording.status.isEmpty ? 'pending' : recording.status);
-    final durationLabel = _formatDuration(recording.durationSeconds);
+  Widget build(BuildContext context) {
+    final date = DateFormat.yMMMd().format(widget.recording.date);
+    final status = (widget.recording.status.isEmpty ? 'pending' : widget.recording.status);
+    final durationLabel = _formatDuration(widget.recording.durationSeconds);
     final metaChips = <Widget>[
       _MetaChip(icon: Icons.calendar_today, label: date),
-      _MetaChip(icon: Icons.account_balance, label: recording.court),
-      _MetaChip(icon: Icons.meeting_room, label: recording.courtroom),
+      _MetaChip(icon: Icons.account_balance, label: widget.recording.court),
+      _MetaChip(icon: Icons.meeting_room, label: widget.recording.courtroom),
       _MetaChip(icon: Icons.schedule, label: durationLabel),
     ];
-    if (recording.judgeName.isNotEmpty) {
+    if (widget.recording.judgeName.isNotEmpty) {
       metaChips.add(
-        _MetaChip(icon: Icons.gavel, label: recording.judgeName),
+        _MetaChip(icon: Icons.gavel, label: widget.recording.judgeName),
       );
     }
     return Container(
@@ -485,7 +578,7 @@ class _RecordingTile extends ConsumerWidget {
               children: [
                 Expanded(
                   child: Text(
-                    '${recording.caseNumber} • ${recording.title}',
+                    '${widget.recording.caseNumber} • ${widget.recording.title}',
                     style: GoogleFonts.roboto(
                       fontWeight: FontWeight.w600,
                       fontSize: 16,
@@ -520,35 +613,25 @@ class _RecordingTile extends ConsumerWidget {
               runSpacing: 4,
               children: metaChips,
             ),
-            if (isMyList) ...[
+            if (widget.isMyList) ...[
               const SizedBox(height: 10),
-              _AssignedUsersRow(recordingId: recording.id),
+              _AssignedUsersRow(recordingId: widget.recording.id),
             ],
             const SizedBox(height: 12),
             Row(
               children: [
-                if (!isMyList)
+                if (!widget.isMyList)
                   OutlinedButton.icon(
-                    onPressed: () async {
-                      final userId = ref.read(authSessionProvider).user?.id;
-                      if (userId == null || userId.isEmpty) {
-                        await ref.read(authControllerProvider).logout();
-                        return;
-                      }
-                      await ref
-                          .read(assignmentRepositoryProvider)
-                          .assignRecording(recording.id, userId: userId);
-                      if (!context.mounted) return;
-                      ref
-                          .read(recordingsControllerProvider.notifier)
-                          .loadInitial();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Added to My List')),
-                      );
-                    },
-                    icon: const Icon(Icons.playlist_add, size: 18),
+                    onPressed: _isOperationInProgress ? null : _handleAddToMyList,
+                    icon: _isOperationInProgress
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.playlist_add, size: 18),
                     label: Text(
-                      'Add to My List',
+                      _isOperationInProgress ? 'Adding...' : 'Add to My List',
                       style: GoogleFonts.roboto(fontWeight: FontWeight.w500),
                     ),
                     style: OutlinedButton.styleFrom(
@@ -563,28 +646,18 @@ class _RecordingTile extends ConsumerWidget {
                       ),
                     ),
                   ),
-                if (isMyList)
+                if (widget.isMyList)
                   OutlinedButton.icon(
-                    onPressed: () async {
-                      final userId = ref.read(authSessionProvider).user?.id;
-                      if (userId == null || userId.isEmpty) {
-                        await ref.read(authControllerProvider).logout();
-                        return;
-                      }
-                      await ref
-                          .read(assignmentRepositoryProvider)
-                          .unassignRecording(recording.id, userId: userId);
-                      if (!context.mounted) return;
-                      ref
-                          .read(recordingsControllerProvider.notifier)
-                          .loadInitial();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Removed from My List')),
-                      );
-                    },
-                    icon: const Icon(Icons.remove_circle_outline, size: 18),
+                    onPressed: _isOperationInProgress ? null : _handleRemoveFromMyList,
+                    icon: _isOperationInProgress
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.remove_circle_outline, size: 18),
                     label: Text(
-                      'Remove from My List',
+                      _isOperationInProgress ? 'Removing...' : 'Remove from My List',
                       style: GoogleFonts.roboto(fontWeight: FontWeight.w500),
                     ),
                     style: OutlinedButton.styleFrom(
@@ -600,14 +673,14 @@ class _RecordingTile extends ConsumerWidget {
                     ),
                   ),
                 const SizedBox(width: 10),
-                if (canAssign)
+                if (widget.canAssign)
                   OutlinedButton.icon(
                     onPressed: () async {
                       await showDialog(
                         context: context,
                         builder: (context) => _AssignToDialog(
-                          recordingId: recording.id,
-                          recordingTitle: recording.title,
+                          recordingId: widget.recording.id,
+                          recordingTitle: widget.recording.title,
                         ),
                       );
                     },
@@ -630,7 +703,7 @@ class _RecordingTile extends ConsumerWidget {
                   ),
                 const Spacer(),
                 IconButton(
-                  onPressed: () => context.go('/recordings/${recording.id}'),
+                  onPressed: () => context.go('/recordings/${widget.recording.id}'),
                   tooltip: 'Open',
                   icon: const Icon(Icons.open_in_new, color: Color(0xFF115343)),
                 ),
@@ -811,6 +884,7 @@ class _AssignToDialogState extends ConsumerState<_AssignToDialog> {
       if (mounted) Navigator.of(context).pop();
       return;
     }
+    print('[AssignToDialog] Assigning user ${user.id} to recording ${widget.recordingId}');
     await ref.read(assignmentRepositoryProvider).assignRecording(
           widget.recordingId,
           userId: user.id,
@@ -818,7 +892,10 @@ class _AssignToDialogState extends ConsumerState<_AssignToDialog> {
               ? 'self_assigned'
               : 'admin_assigned',
         );
+    print('[AssignToDialog] Assignment completed, reloading...');
     await _loadAssigned();
+    // Also refresh the main recordings list
+    await ref.read(recordingsControllerProvider.notifier).loadInitial();
   }
 
   Future<void> _removeAssignment(AssignedUser assignment) async {
@@ -829,8 +906,12 @@ class _AssignToDialogState extends ConsumerState<_AssignToDialog> {
       return;
     }
     if (assignment.id.isEmpty) return;
+    print('[AssignToDialog] Removing assignment ${assignment.id}');
     await ref.read(assignmentRepositoryProvider).deleteAssignment(assignment.id);
+    print('[AssignToDialog] Removal completed, reloading...');
     await _loadAssigned();
+    // Also refresh the main recordings list
+    await ref.read(recordingsControllerProvider.notifier).loadInitial();
   }
 
   @override
@@ -853,126 +934,134 @@ class _AssignToDialogState extends ConsumerState<_AssignToDialog> {
       ),
       content: SizedBox(
         width: 520,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              widget.recordingTitle,
-              style: GoogleFonts.roboto(
-                color: Colors.grey[700],
-                fontSize: 13,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Search by name, email, court, or role...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
+        height: 500, // Fixed height to prevent overflow
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.recordingTitle,
+                style: GoogleFonts.roboto(
+                  color: Colors.grey[700],
+                  fontSize: 13,
                 ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
+              const SizedBox(height: 12),
+              TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: 'Search by name, email, court, or role...',
+                  prefixIcon: const Icon(Icons.search),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 12),
+              Text(
                 'Available Users',
                 style: GoogleFonts.roboto(fontWeight: FontWeight.w600),
               ),
-            ),
-            const SizedBox(height: 8),
-            if (_isLoadingUsers)
-              const Padding(
-                padding: EdgeInsets.all(12),
-                child: CircularProgressIndicator(),
-              )
-            else if (filteredUsers.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Text(
-                  'No users found',
-                  style: GoogleFonts.roboto(color: Colors.grey[600]),
+              const SizedBox(height: 8),
+              if (_isLoadingUsers)
+                const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (filteredUsers.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    'No users found',
+                    style: GoogleFonts.roboto(color: Colors.grey[600]),
+                  ),
+                )
+              else
+                Container(
+                  height: 150,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: filteredUsers.length,
+                    itemBuilder: (context, index) {
+                      final user = filteredUsers[index];
+                      return ListTile(
+                        dense: true,
+                        title: Text(user.name, style: GoogleFonts.roboto()),
+                        subtitle: Text(
+                          '${user.email} • ${user.role}',
+                          style: GoogleFonts.roboto(fontSize: 12),
+                        ),
+                        trailing: OutlinedButton(
+                          onPressed: () => _assignUser(user),
+                          child: const Text('Assign'),
+                        ),
+                      );
+                    },
+                  ),
                 ),
-              )
-            else
-              SizedBox(
-                height: 180,
-                child: ListView.builder(
-                  itemCount: filteredUsers.length,
-                  itemBuilder: (context, index) {
-                    final user = filteredUsers[index];
-                    return ListTile(
-                      dense: true,
-                      title: Text(user.name, style: GoogleFonts.roboto()),
-                      subtitle: Text(
-                        '${user.email} • ${user.role}',
-                        style: GoogleFonts.roboto(fontSize: 12),
-                      ),
-                      trailing: OutlinedButton(
-                        onPressed: () => _assignUser(user),
-                        child: const Text('Assign'),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
+              const SizedBox(height: 16),
+              Text(
                 'Currently Assigned',
                 style: GoogleFonts.roboto(fontWeight: FontWeight.w600),
               ),
-            ),
-            const SizedBox(height: 8),
-            if (_isLoadingAssigned)
-              const Padding(
-                padding: EdgeInsets.all(12),
-                child: CircularProgressIndicator(),
-              )
-            else if (_assigned.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Text(
-                  'No assigned users',
-                  style: GoogleFonts.roboto(color: Colors.grey[600]),
-                ),
-              )
-            else
-              SizedBox(
-                height: 160,
-                child: ListView.builder(
-                  itemCount: _assigned.length,
-                  itemBuilder: (context, index) {
-                    final assigned = _assigned[index];
-                    return ListTile(
-                      dense: true,
-                      title: Text(
-                        assigned.name.isNotEmpty ? assigned.name : assigned.email,
-                        style: GoogleFonts.roboto(),
-                      ),
-                      subtitle: Text(
-                        assigned.email,
-                        style: GoogleFonts.roboto(fontSize: 12),
-                      ),
-                      trailing: OutlinedButton(
-                        onPressed: () => _removeAssignment(assigned),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFFD32F2F),
-                          side: const BorderSide(color: Color(0xFFD32F2F)),
+              const SizedBox(height: 8),
+              if (_isLoadingAssigned)
+                const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_assigned.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    'No assigned users',
+                    style: GoogleFonts.roboto(color: Colors.grey[600]),
+                  ),
+                )
+              else
+                Container(
+                  height: 120,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: _assigned.length,
+                    itemBuilder: (context, index) {
+                      final assigned = _assigned[index];
+                      return ListTile(
+                        dense: true,
+                        title: Text(
+                          assigned.name.isNotEmpty ? assigned.name : assigned.email,
+                          style: GoogleFonts.roboto(),
                         ),
-                        child: const Text('Remove'),
-                      ),
-                    );
-                  },
+                        subtitle: Text(
+                          assigned.email,
+                          style: GoogleFonts.roboto(fontSize: 12),
+                        ),
+                        trailing: OutlinedButton(
+                          onPressed: () => _removeAssignment(assigned),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFD32F2F),
+                            side: const BorderSide(color: Color(0xFFD32F2F)),
+                          ),
+                          child: const Text('Remove'),
+                        ),
+                      );
+                    },
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
       actions: [
@@ -1445,7 +1534,7 @@ class _CourtFilterSidebarState extends ConsumerState<_CourtFilterSidebar> {
     } catch (error) {
       setState(() {
         _isLoading = false;
-        _errorMessage = error.toString();
+        _errorMessage = mapDioError(error);
       });
     }
   }

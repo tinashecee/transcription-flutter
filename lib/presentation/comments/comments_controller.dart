@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/providers.dart';
 import '../../domain/entities/comment.dart';
+import '../../services/auth_session.dart';
+import '../../services/dio_error_mapper.dart';
 
 class CommentsState {
   CommentsState({
@@ -46,39 +48,28 @@ class CommentsController extends StateNotifier<CommentsState> {
     } catch (error) {
       state = state.copyWith(
         isLoading: false,
-        errorMessage: error.toString(),
+        errorMessage: mapDioError(error),
       );
     }
   }
 
-  Future<void> addComment(String body, int timestampSeconds) async {
+  Future<void> addComment(String content, String commentType) async {
     final recordingId = _recordingId;
     if (recordingId == null) return;
-    final repo = _ref.read(commentRepositoryProvider);
-    await repo.createComment(
-      recordingId: recordingId,
-      body: body,
-      timestampSeconds: timestampSeconds,
-    );
+    final commenterId = _ref.read(authSessionProvider).user?.id;
+    if (commenterId == null) {
+      state = state.copyWith(
+        errorMessage: 'User session expired. Please log in again.',
+      );
+      return;
+    }
+    await _ref.read(commentRepositoryProvider).createComment(
+          recordingId: recordingId,
+          content: content,
+          commentType: commentType,
+          commenterId: commenterId,
+        );
     await load(recordingId);
-  }
-
-  Future<void> deleteComment(String commentId) async {
-    await _ref.read(commentRepositoryProvider).deleteComment(commentId);
-    final recordingId = _recordingId;
-    if (recordingId != null) {
-      await load(recordingId);
-    }
-  }
-
-  Future<void> updateComment(String commentId, String body) async {
-    await _ref
-        .read(commentRepositoryProvider)
-        .updateComment(commentId: commentId, body: body);
-    final recordingId = _recordingId;
-    if (recordingId != null) {
-      await load(recordingId);
-    }
   }
 }
 
