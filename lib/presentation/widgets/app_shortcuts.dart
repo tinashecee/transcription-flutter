@@ -94,19 +94,26 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts>
       child: Actions(
         actions: <Type, Action<Intent>>{
           RewindIntent: CallbackAction<RewindIntent>(
-            onInvoke: (intent) =>
-                ref.read(audioPlayerControllerProvider.notifier).rewind(),
+            onInvoke: (intent) {
+              print('[AppShortcuts] F1 Rewind triggered');
+              return ref.read(audioPlayerControllerProvider.notifier).rewind();
+            },
           ),
           PlayPauseIntent: CallbackAction<PlayPauseIntent>(
-            onInvoke: (intent) =>
-                ref.read(audioPlayerControllerProvider.notifier).playPause(),
+            onInvoke: (intent) {
+              print('[AppShortcuts] F2 PlayPause triggered');
+              return ref.read(audioPlayerControllerProvider.notifier).playPause();
+            },
           ),
           ForwardIntent: CallbackAction<ForwardIntent>(
-            onInvoke: (intent) =>
-                ref.read(audioPlayerControllerProvider.notifier).forward(),
+            onInvoke: (intent) {
+              print('[AppShortcuts] F3 Forward triggered');
+              return ref.read(audioPlayerControllerProvider.notifier).forward();
+            },
           ),
           SlowDownIntent: CallbackAction<SlowDownIntent>(
             onInvoke: (intent) {
+              print('[AppShortcuts] F4 SlowDown triggered');
               final state = ref.read(audioPlayerControllerProvider);
               final next = (state.speed - 0.25).clamp(0.25, 2.0);
               return ref
@@ -116,6 +123,7 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts>
           ),
           SpeedUpIntent: CallbackAction<SpeedUpIntent>(
             onInvoke: (intent) {
+              print('[AppShortcuts] F5 SpeedUp triggered');
               final state = ref.read(audioPlayerControllerProvider);
               final next = (state.speed + 0.25).clamp(0.25, 2.0);
               return ref
@@ -124,15 +132,7 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts>
             },
           ),
         },
-        child: Focus(
-          autofocus: true,
-                      onFocusChange: (hasFocus) {
-                        if (!hasFocus) {
-                          _clearKeyboardState();
-                        }
-                      },
-          child: widget.child,
-        ),
+        child: widget.child,
       ),
     );
   }

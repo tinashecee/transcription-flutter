@@ -5,6 +5,7 @@ import 'app/app.dart';
 import 'app/config.dart';
 import 'app/providers.dart';
 import 'services/logging_service.dart';
+import 'services/update_manager.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -12,6 +13,9 @@ Future<void> main() async {
   final config = await AppConfig.load();
   final loggingService = LoggingService();
   await loggingService.init();
+
+  // Initialize UpdateManager
+  await UpdateManager.initInstalledVersion();
 
   // Enable console logging for debugging
   setupConsoleLogging();

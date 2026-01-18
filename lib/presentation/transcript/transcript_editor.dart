@@ -1,13 +1,18 @@
-import 'package:fleather/fleather.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_quill/flutter_quill.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'transcript_controller.dart';
 
 class TranscriptEditor extends ConsumerStatefulWidget {
-  const TranscriptEditor({super.key, required this.recordingId});
+  const TranscriptEditor({
+    super.key,
+    required this.recordingId,
+    this.isAssigned = true,
+  });
 
   final String recordingId;
+  final bool isAssigned;
 
   @override
   ConsumerState<TranscriptEditor> createState() => _TranscriptEditorState();
@@ -15,186 +20,150 @@ class TranscriptEditor extends ConsumerStatefulWidget {
 
 class _TranscriptEditorState extends ConsumerState<TranscriptEditor> {
   late final FocusNode _focusNode;
-  late final ScrollController _toolbarScrollController;
+  late final ScrollController _scrollController;
 
   @override
   void initState() {
     super.initState();
-    _focusNode = FocusNode();
-    _toolbarScrollController = ScrollController();
+    _focusNode = FocusNode(debugLabel: 'TranscriptEditorFocus');
+    _scrollController = ScrollController();
+
+    // Log focus changes
+    _focusNode.addListener(() {
+      print('[TranscriptEditor] Focus changed: hasFocus=${_focusNode.hasFocus}');
+    });
+
+    // Load transcript
     ref.read(transcriptControllerProvider.notifier).load(widget.recordingId);
   }
 
   @override
   void dispose() {
+    print('[TranscriptEditor] dispose called for recordingId=${widget.recordingId}');
     _focusNode.dispose();
-    _toolbarScrollController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(transcriptControllerProvider);
+    final canEdit = widget.isAssigned;
+
+    print('[TranscriptEditor] build isAssigned=${widget.isAssigned} canEdit=$canEdit');
+    print('[TranscriptEditor] Controller instance: ${state.controller.hashCode}');
+    print('[TranscriptEditor] Document length: ${state.controller.document.length}');
 
     return Column(
       children: [
-        Scrollbar(
-          thumbVisibility: true,
-          trackVisibility: true,
-          controller: _toolbarScrollController,
-          child: SingleChildScrollView(
-            controller: _toolbarScrollController,
-            scrollDirection: Axis.horizontal,
-            child: FleatherToolbar(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
+        // Show warning banner if user cannot edit
+        if (!canEdit)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            color: Colors.orange.shade100,
+            child: Row(
               children: [
-              UndoRedoButton.undo(controller: state.controller),
-              UndoRedoButton.redo(controller: state.controller),
-              const VerticalDivider(width: 8),
-              SelectHeadingButton(controller: state.controller),
-              const VerticalDivider(width: 8),
-              ToggleStyleButton(
-                attribute: ParchmentAttribute.bold,
-                icon: Icons.format_bold,
-                controller: state.controller,
-              ),
-              ToggleStyleButton(
-                attribute: ParchmentAttribute.italic,
-                icon: Icons.format_italic,
-                controller: state.controller,
-              ),
-              ToggleStyleButton(
-                attribute: ParchmentAttribute.underline,
-                icon: Icons.format_underline,
-                controller: state.controller,
-              ),
-              ToggleStyleButton(
-                attribute: ParchmentAttribute.strikethrough,
-                icon: Icons.format_strikethrough,
-                controller: state.controller,
-              ),
-              ColorButton(
-                controller: state.controller,
-                attributeKey: ParchmentAttribute.foregroundColor,
-                nullColorLabel: 'Text color',
-                builder: (context, value) {
-                  final effectiveColor =
-                      value ?? DefaultTextStyle.of(context).style.color ?? Colors.black;
-                  return Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.text_fields_sharp, size: 16),
-                      Container(
-                        width: 18,
-                        height: 3,
-                        decoration: BoxDecoration(color: effectiveColor),
-                      ),
-                    ],
-                  );
-                },
-              ),
-              ColorButton(
-                controller: state.controller,
-                attributeKey: ParchmentAttribute.backgroundColor,
-                nullColorLabel: 'Highlight',
-                builder: (context, value) => Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.format_color_fill, size: 16),
-                    Container(
-                      width: 18,
-                      height: 3,
-                      decoration: BoxDecoration(color: value ?? Colors.transparent),
+                Icon(Icons.info_outline, color: Colors.orange.shade900),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'You are not assigned to this recording. Transcript is read-only.',
+                    style: TextStyle(
+                      color: Colors.orange.shade900,
+                      fontWeight: FontWeight.w500,
                     ),
-                  ],
+                  ),
                 ),
-              ),
-              const VerticalDivider(width: 8),
-              LinkStyleButton(controller: state.controller),
-              ToggleStyleButton(
-                attribute: ParchmentAttribute.inlineCode,
-                icon: Icons.code,
-                controller: state.controller,
-              ),
-              const VerticalDivider(width: 8),
-              ToggleStyleButton(
-                attribute: ParchmentAttribute.left,
-                icon: Icons.format_align_left,
-                controller: state.controller,
-              ),
-              ToggleStyleButton(
-                attribute: ParchmentAttribute.center,
-                icon: Icons.format_align_center,
-                controller: state.controller,
-              ),
-              ToggleStyleButton(
-                attribute: ParchmentAttribute.right,
-                icon: Icons.format_align_right,
-                controller: state.controller,
-              ),
-              ToggleStyleButton(
-                attribute: ParchmentAttribute.justify,
-                icon: Icons.format_align_justify,
-                controller: state.controller,
-              ),
-              const VerticalDivider(width: 8),
-              ToggleStyleButton(
-                attribute: ParchmentAttribute.ul,
-                icon: Icons.format_list_bulleted,
-                controller: state.controller,
-              ),
-              ToggleStyleButton(
-                attribute: ParchmentAttribute.ol,
-                icon: Icons.format_list_numbered,
-                controller: state.controller,
-              ),
-              ToggleStyleButton(
-                attribute: ParchmentAttribute.cl,
-                icon: Icons.checklist,
-                controller: state.controller,
-              ),
-              IndentationButton(controller: state.controller, increase: true),
-              IndentationButton(controller: state.controller, increase: false),
-              const VerticalDivider(width: 8),
-              ToggleStyleButton(
-                attribute: ParchmentAttribute.bq,
-                icon: Icons.format_quote,
-                controller: state.controller,
-              ),
-              ToggleStyleButton(
-                attribute: ParchmentAttribute.code,
-                icon: Icons.code_off,
-                controller: state.controller,
-              ),
-              InsertEmbedButton(
-                controller: state.controller,
-                icon: Icons.horizontal_rule,
-              ),
               ],
             ),
           ),
-        ),
-        const Divider(height: 1),
-        Expanded(
-          child: FleatherEditor(
-            controller: state.controller,
-            focusNode: _focusNode,
-            readOnly: false,
-          ),
-        ),
-        if (state.errorMessage != null)
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Text(
-              state.errorMessage!,
-              style: const TextStyle(color: Colors.red),
+
+        // Toolbar (only if user can edit)
+        if (canEdit)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              border: Border(
+                bottom: BorderSide(color: Colors.grey.shade300),
+              ),
+            ),
+            child: QuillSimpleToolbar(
+              controller: state.controller,
+              config: QuillSimpleToolbarConfig(
+                buttonOptions: QuillSimpleToolbarButtonOptions(
+                  base: QuillToolbarBaseButtonOptions(
+                    iconSize: 16,
+                    iconButtonFactor: 1.2,
+                  ),
+                ),
+                toolbarSize: 32,
+                multiRowsDisplay: false,
+              ),
             ),
           ),
+
+        // Quill Editor
+        Expanded(
+          child: Container(
+            color: Colors.white,
+            padding: const EdgeInsets.all(16),
+            child: QuillEditor(
+              controller: state.controller,
+              focusNode: _focusNode,
+              scrollController: _scrollController,
+              config: QuillEditorConfig(
+                readOnlyMouseCursor: SystemMouseCursors.forbidden,
+              ),
+            ),
+          ),
+        ),
+
+        // Status bar
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            border: Border(
+              top: BorderSide(color: Colors.grey.shade300),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Characters: ${state.controller.document.length}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+              if (state.isSaving)
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Saving...',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
       ],
     );
   }
-
 }
-

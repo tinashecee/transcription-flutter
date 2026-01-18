@@ -6,6 +6,7 @@ import '../presentation/auth/login_screen.dart';
 import '../presentation/auth/auth_controller.dart';
 import '../presentation/recordings/recordings_screen.dart';
 import '../presentation/recordings/recording_detail_screen.dart';
+import '../presentation/system/system_status_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authControllerProvider);
@@ -48,6 +49,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => RecordingDetailScreen(
           recordingId: state.pathParameters['id']!,
         ),
+      ),
+      GoRoute(
+        path: '/system',
+        builder: (context, state) => const SystemStatusScreen(),
       ),
     ],
   );

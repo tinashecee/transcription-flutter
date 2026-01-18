@@ -9,16 +9,30 @@ import '../../domain/entities/assigned_user.dart';
 import '../../domain/entities/user.dart';
 import '../../domain/repositories/recording_repository.dart';
 import '../../data/providers.dart';
-import '../../app/providers.dart';
 import '../../services/auth_session.dart';
 import '../../services/dio_error_mapper.dart';
 import '../auth/auth_controller.dart';
 import '../player/mini_player_bar.dart';
-import '../widgets/role_guard.dart';
 import 'recordings_controller.dart';
+import '../../services/update_manager.dart';
 
-class RecordingsScreen extends ConsumerWidget {
+class RecordingsScreen extends ConsumerStatefulWidget {
   const RecordingsScreen({super.key});
+
+  @override
+  ConsumerState<RecordingsScreen> createState() => _RecordingsScreenState();
+}
+
+class _RecordingsScreenState extends ConsumerState<RecordingsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    
+    // Auto-check for updates on dashboard load
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      UpdateManager.checkForUpdatesAndPrompt(context);
+    });
+  }
 
   bool _canAssign(String? role) {
     final normalized = role?.toLowerCase().trim();
@@ -28,7 +42,7 @@ class RecordingsScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final state = ref.watch(recordingsControllerProvider);
     final controller = ref.read(recordingsControllerProvider.notifier);
     final auth = ref.watch(authSessionProvider);
@@ -75,14 +89,28 @@ class RecordingsScreen extends ConsumerWidget {
                     ),
                   ),
 
-                  // Title
-                  Text(
-                    'Recordings',
-                    style: GoogleFonts.roboto(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  // Title with version
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Recordings',
+                        style: GoogleFonts.roboto(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        'v${UpdateManager.appDisplayVersion ?? '2.1.6'}',
+                        style: GoogleFonts.roboto(
+                          color: Colors.white.withOpacity(0.7),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ),
 
                   const Spacer(),
@@ -90,168 +118,16 @@ class RecordingsScreen extends ConsumerWidget {
                   // Action buttons
                   IconButton(
                     icon: const Icon(Icons.system_update, color: Colors.white),
-                    tooltip: 'Check for updates',
-                    onPressed: () async {
-                      final updateService = ref.read(updateServiceProvider);
-                      final info = await updateService.checkForUpdates();
-                      if (!context.mounted) return;
-                      if (info == null) {
-                        showDialog(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            backgroundColor: Colors.white,
-                            title: Text(
-                              'Updates',
-                              style: GoogleFonts.roboto(
-                                color: const Color(0xFF115343),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            content: Text(
-                              'No updates available.',
-                              style: GoogleFonts.roboto(),
-                            ),
-                          ),
-                        );
-                        return;
-                      }
-                      final shouldDownload = await showDialog<bool>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          backgroundColor: Colors.white,
-                          title: Text(
-                            'Update ${info.version}',
-                            style: GoogleFonts.roboto(
-                              color: const Color(0xFF115343),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          content: Text(
-                            info.mandatory
-                                ? 'This update is required.'
-                                : 'An update is available.',
-                            style: GoogleFonts.roboto(),
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(false),
-                              child: Text(
-                                'Later',
-                                style: GoogleFonts.roboto(
-                                  color: const Color(0xFF115343),
-                                ),
-                              ),
-                            ),
-                            FilledButton(
-                              style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xFF115343),
-                              ),
-                              onPressed: () => Navigator.of(context).pop(true),
-                              child: Text(
-                                'Download',
-                                style: GoogleFonts.roboto(),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                      if (shouldDownload == true) {
-                        final file = await updateService.downloadUpdate(info.url);
-                        if (!context.mounted) return;
-                        showDialog(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            backgroundColor: Colors.white,
-                            title: Text(
-                              'Update downloaded',
-                              style: GoogleFonts.roboto(
-                                color: const Color(0xFF115343),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            content: Text(
-                              'Saved to ${file.path}',
-                              style: GoogleFonts.roboto(),
-                            ),
-                          ),
-                        );
-                      }
+                    tooltip: 'System Status & Updates',
+                    onPressed: () {
+                      context.go('/system');
                     },
-                  ),
-
-                  RoleGuard(
-                    allowedRoles: const ['admin', 'super_admin'],
-                    child: IconButton(
-                      icon: const Icon(Icons.playlist_add_check, color: Colors.white),
-                      tooltip: 'Bulk assign',
-                      onPressed: () async {
-                        final ids = await showDialog<List<String>>(
-                          context: context,
-                          builder: (context) => const _BulkAssignDialog(),
-                        );
-                        if (ids == null || ids.isEmpty) return;
-                        await ref.read(assignmentRepositoryProvider).bulkAssign(ids);
-                        await controller.loadInitial();
-                      },
-                    ),
                   ),
 
                   IconButton(
                     onPressed: () => controller.loadInitial(),
                     icon: const Icon(Icons.refresh, color: Colors.white),
                     tooltip: 'Refresh',
-                  ),
-
-                  IconButton(
-                    onPressed: () async {
-                      final loggingService = ref.read(loggingServiceProvider);
-                      final logContents = await loggingService.getLogContents();
-                      final logPath = loggingService.getLogFilePath();
-
-                      if (!context.mounted) return;
-
-                      showDialog(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Application Logs'),
-                          content: SingleChildScrollView(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  'Log File: $logPath',
-                                  style: GoogleFonts.roboto(
-                                    fontSize: 12,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                Container(
-                                  constraints: const BoxConstraints(maxHeight: 400),
-                          child: Text(
-                            logContents,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontFamily: 'monospace',
-                              color: Colors.black87,
-                            ),
-                          ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(),
-                              child: const Text('Close'),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.bug_report, color: Colors.white),
-                    tooltip: 'View Logs',
                   ),
 
                   IconButton(
@@ -1882,108 +1758,6 @@ class _CourtFilterSidebarState extends ConsumerState<_CourtFilterSidebar> {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _BulkAssignDialog extends StatefulWidget {
-  const _BulkAssignDialog();
-
-  @override
-  State<_BulkAssignDialog> createState() => _BulkAssignDialogState();
-}
-
-class _BulkAssignDialogState extends State<_BulkAssignDialog> {
-  final _controller = TextEditingController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      title: Text(
-        'Bulk Assign',
-        style: GoogleFonts.roboto(
-          color: const Color(0xFF115343),
-          fontWeight: FontWeight.w600,
-          fontSize: 20,
-        ),
-      ),
-      content: TextField(
-        controller: _controller,
-        style: GoogleFonts.roboto(
-          color: const Color(0xFF115343),
-        ),
-        decoration: InputDecoration(
-          labelText: 'Recording IDs (comma separated)',
-          labelStyle: GoogleFonts.roboto(
-            color: Colors.grey[600],
-          ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(
-              color: const Color(0xFF115343).withOpacity(0.3),
-            ),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(
-              color: const Color(0xFF115343).withOpacity(0.3),
-            ),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(
-              color: Color(0xFF115343),
-              width: 2,
-            ),
-          ),
-          filled: true,
-          fillColor: const Color(0xFF115343).withOpacity(0.02),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(
-            'Cancel',
-            style: GoogleFonts.roboto(
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-        FilledButton(
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF115343),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-          onPressed: () {
-            final ids = _controller.text
-                .split(',')
-                .map((e) => e.trim())
-                .where((e) => e.isNotEmpty)
-                .toList();
-            Navigator.of(context).pop(ids);
-          },
-          child: Text(
-            'Assign',
-            style: GoogleFonts.roboto(
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

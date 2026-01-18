@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../../domain/repositories/transcript_repository.dart';
 import '../api/api_client.dart';
 
@@ -57,18 +59,56 @@ class TranscriptRepositoryImpl implements TranscriptRepository {
   }
 
   @override
-  Future<void> saveTranscript({
+  Future<Map<String, dynamic>> saveTranscript({
     required String recordingId,
     required String html,
   }) async {
-    await _client.dio.put(
+    print('[TranscriptRepo] PUT /case_recordings/$recordingId/transcript');
+    print('[TranscriptRepo] Transcript length: ${html.length} chars');
+    
+    final response = await _client.dio.put<Map<String, dynamic>>(
       '/case_recordings/$recordingId/transcript',
-      data: {'transcript_html': html},
+      data: {'transcript': html},
     );
+    
+    print('[TranscriptRepo] Save response: ${response.data}');
+    return response.data ?? {};
   }
 
   @override
-  Future<void> retranscribe(String recordingId) async {
-    await _client.dio.post('/case_recordings/$recordingId/retranscribe');
+  Future<Map<String, dynamic>> checkTranscriptionStatus(String recordingId) async {
+    final response = await _client.dio.get<Map<String, dynamic>>(
+      '/case_recordings/$recordingId/transcription_status',
+    );
+    return response.data ?? {};
+  }
+
+  @override
+  Future<Map<String, dynamic>> retranscribe(String recordingId, String userId) async {
+    print('[TranscriptRepo] POST /retranscribe with recordingId=$recordingId userId=$userId');
+    
+    // Manually encode as form data (key=value format)
+    final formData = 'id=${Uri.encodeComponent(recordingId)}';
+    print('[TranscriptRepo] Form data: $formData');
+    
+    try {
+      final response = await _client.dio.post<Map<String, dynamic>>(
+        '/retranscribe?user_id=${Uri.encodeComponent(userId)}',
+        data: formData,
+        options: Options(
+          contentType: 'application/x-www-form-urlencoded',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        ),
+      );
+      
+      print('[TranscriptRepo] Retranscribe response: ${response.data}');
+      return response.data ?? {};
+    } catch (error, stack) {
+      print('[TranscriptRepo] Retranscribe API error: $error');
+      print('[TranscriptRepo] Stack: $stack');
+      rethrow;
+    }
   }
 }

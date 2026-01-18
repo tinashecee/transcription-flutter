@@ -1,10 +1,9 @@
-import 'package:dart_quill_delta/dart_quill_delta.dart' as dq;
-import 'package:fleather/fleather.dart' as fleather;
+import 'package:flutter/widgets.dart';
+import 'package:flutter_quill/flutter_quill.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 import 'package:logging/logging.dart';
-import 'package:quill_html_converter/quill_html_converter.dart';
 
 import '../../app/providers.dart';
 import '../../data/providers.dart';
@@ -16,12 +15,12 @@ class TranscriptState {
     this.errorMessage,
   });
 
-  final fleather.FleatherController controller;
+  final QuillController controller;
   final bool isSaving;
   final String? errorMessage;
 
   TranscriptState copyWith({
-    fleather.FleatherController? controller,
+    QuillController? controller,
     bool? isSaving,
     String? errorMessage,
   }) {
@@ -37,15 +36,12 @@ class TranscriptController extends StateNotifier<TranscriptState> {
   TranscriptController(this._ref)
       : super(
           TranscriptState(
-            controller: fleather.FleatherController(
-              document: fleather.ParchmentDocument(),
-            ),
+            controller: QuillController.basic(),
             isSaving: false,
           ),
         );
 
   final Ref _ref;
-  // Auto-save removed
   String? _recordingId;
   late final Logger _logger = _ref.read(loggingServiceProvider).logger;
 
@@ -56,20 +52,31 @@ class TranscriptController extends StateNotifier<TranscriptState> {
       final html = await repo.fetchTranscript(recordingId);
       _logger.info(
         '[TranscriptController] load recording=$recordingId '
-        'length=${html.length} preview=${html.replaceAll('\n', ' ').substring(0, html.length > 200 ? 200 : html.length)}',
+        'length=${html.length}',
       );
-      if (html.trim().isEmpty) {
-        state = state.copyWith(
-          controller: fleather.FleatherController(
-            document: fleather.ParchmentDocument(),
-          ),
-        );
-        return;
-      }
+
+      // Dispose old controller
+      final oldController = state.controller;
+      oldController.dispose();
+      _logger.info('[TranscriptController] Disposed old controller');
+
+      // Convert HTML to Delta
       final delta = _htmlToDelta(html);
-      final document = fleather.ParchmentDocument.fromJson(delta.toJson());
-      state = state.copyWith(
-        controller: fleather.FleatherController(document: document),
+      _logger.info('[TranscriptController] Converted to delta: ${delta.length} operations');
+
+      // Create a NEW controller with the document
+      final document = Document.fromDelta(delta);
+      final newController = QuillController(
+        document: document,
+        selection: const TextSelection.collapsed(offset: 0),
+      );
+      _setupControllerListeners(newController);
+      _logger.info('[TranscriptController] Created new controller');
+
+      // Update state with the new controller
+      state = TranscriptState(
+        controller: newController,
+        isSaving: false,
       );
     } catch (error, stack) {
       _logger.severe('[TranscriptController] load failed', error, stack);
@@ -79,318 +86,274 @@ class TranscriptController extends StateNotifier<TranscriptState> {
     }
   }
 
-  Future<void> save() async {
+  void _setupControllerListeners(QuillController controller) {
+    controller.document.changes.listen((event) {
+      _logger.info('[TranscriptController] Document changed');
+    });
+  }
+
+  Future<bool> save() async {
     final recordingId = _recordingId;
-    if (recordingId == null) return;
+    if (recordingId == null) return false;
     state = state.copyWith(isSaving: true, errorMessage: null);
     try {
       final repo = _ref.read(transcriptRepositoryProvider);
-      final parchmentDelta = state.controller.document.toDelta();
-      final html = dq.Delta.fromJson(parchmentDelta.toJson()).toHtml();
-      await repo.saveTranscript(recordingId: recordingId, html: html);
+      final delta = state.controller.document.toDelta();
+
+      // Convert delta to HTML
+      final html = _deltaToHtml(delta);
+
+      _logger.info('[TranscriptController] Saving transcript for $recordingId (${html.length} chars)');
+
+      final response = await repo.saveTranscript(recordingId: recordingId, html: html);
+
+      _logger.info('[TranscriptController] Save response: $response');
+
       state = state.copyWith(isSaving: false);
-    } catch (error) {
+      return true;
+    } catch (error, stack) {
+      _logger.severe('[TranscriptController] Save failed', error, stack);
       state = state.copyWith(
         isSaving: false,
         errorMessage: error.toString(),
       );
+      return false;
     }
   }
 
-  Future<void> retranscribe() async {
+  Future<Map<String, dynamic>> checkTranscriptionStatus() async {
     final recordingId = _recordingId;
-    if (recordingId == null) return;
-    final repo = _ref.read(transcriptRepositoryProvider);
-    await repo.retranscribe(recordingId);
-    await load(recordingId);
+    if (recordingId == null) return {};
+    
+    try {
+      final repo = _ref.read(transcriptRepositoryProvider);
+      final status = await repo.checkTranscriptionStatus(recordingId);
+      _logger.info('[TranscriptController] Transcription status: $status');
+      return status;
+    } catch (error, stack) {
+      _logger.severe('[TranscriptController] Failed to check status', error, stack);
+      return {};
+    }
+  }
+
+  Future<Map<String, dynamic>> retranscribe(String userId) async {
+    final recordingId = _recordingId;
+    if (recordingId == null) return {'error': 'No recording loaded'};
+    
+    try {
+      final repo = _ref.read(transcriptRepositoryProvider);
+      
+      // Check for existing jobs first
+      _logger.info('[TranscriptController] Checking for existing jobs...');
+      final status = await repo.checkTranscriptionStatus(recordingId);
+      _logger.info('[TranscriptController] Status response: $status');
+      
+      final activeJobs = status['active_jobs'] as List?;
+      final transcriptionState = status['transcription_state'] as String?;
+      
+      if (activeJobs != null && activeJobs.isNotEmpty) {
+        final jobStatus = transcriptionState ?? 'active';
+        _logger.warning('[TranscriptController] Job already exists: $jobStatus');
+        return {
+          'error': 'Job Already Exists',
+          'message': 'A transcription job is already $jobStatus for this recording.',
+          'already_exists': true,
+        };
+      }
+      
+      _logger.info('[TranscriptController] No existing jobs found');
+      
+      // No existing job - create new one
+      _logger.info('[TranscriptController] Starting retranscribe for $recordingId');
+      final response = await repo.retranscribe(recordingId, userId);
+      _logger.info('[TranscriptController] Retranscribe response: $response');
+      
+      // Reload transcript after some delay
+      if (response['already_exists'] != true) {
+        Future.delayed(const Duration(seconds: 2), () {
+          if (_recordingId == recordingId) {
+            load(recordingId);
+          }
+        });
+      }
+      
+      return response;
+    } catch (error, stack) {
+      _logger.severe('[TranscriptController] Retranscribe failed', error, stack);
+      return {
+        'error': 'Retranscribe Failed',
+        'message': error.toString(),
+      };
+    }
   }
 
   @override
   void dispose() {
+    _logger.info('[TranscriptController] Disposing controller');
+    state.controller.dispose();
     super.dispose();
   }
 
-  dq.Delta _htmlToDelta(String html) {
+  dynamic _htmlToDelta(String html) {
+    if (html.trim().isEmpty) {
+      final doc = Document();
+      return doc.toDelta();
+    }
+
     final document = html_parser.parse(html);
-    final delta = dq.Delta();
     final body = document.body;
     if (body == null) {
-      delta.insert('\n');
-      return delta;
+      final doc = Document();
+      return doc.toDelta();
     }
+
+    final doc = Document();
+    int offset = 0;
     for (final node in body.nodes) {
-      _convertNode(node, delta, const {});
+      offset = _convertNode(node, doc, offset, {});
     }
-    _ensureTrailingNewline(delta);
-    return delta;
+
+    // Ensure trailing newline
+    if (offset > 0) {
+      doc.insert(offset, '\n');
+    }
+
+    return doc.toDelta();
   }
 
-  void _ensureTrailingNewline(dq.Delta delta) {
-    if (delta.isEmpty) {
-      delta.insert('\n');
-      return;
-    }
-    final last = delta.operations.last;
-    final data = last.data;
-    if (data is String && data.endsWith('\n')) return;
-    delta.insert('\n');
-  }
-
-  void _convertNode(
+  int _convertNode(
     dom.Node node,
-    dq.Delta delta,
-    Map<String, dynamic> inlineAttrs, {
-    Map<String, dynamic>? blockAttrs,
-  }) {
+    Document document,
+    int offset,
+    Map<String, dynamic> attributes,
+  ) {
     if (node is dom.Text) {
       final text = node.text;
-      if (text.isEmpty) return;
-      delta.insert(text, inlineAttrs.isEmpty ? null : inlineAttrs);
-      return;
+      if (text.isNotEmpty) {
+        document.insert(offset, text);
+        offset += text.length;
+      }
+      return offset;
     }
 
-    if (node is! dom.Element) return;
+    if (node is! dom.Element) return offset;
 
     final tag = node.localName ?? '';
-    final mergedInline = _mergeInlineAttributes(inlineAttrs, _attrsForElement(node));
-    final mergedBlock = _mergeBlockAttributes(blockAttrs, _blockAttrsForElement(tag));
+    final newAttributes = Map<String, dynamic>.from(attributes);
 
-    switch (tag) {
-      case 'br':
-        delta.insert('\n', mergedBlock);
-        return;
-      case 'p':
-      case 'div':
-        _convertChildren(node, delta, mergedInline, blockAttrs: blockAttrs);
-        delta.insert('\n', mergedBlock);
-        return;
-      case 'h1':
-      case 'h2':
-      case 'h3':
-      case 'h4':
-      case 'h5':
-      case 'h6':
-        _convertChildren(node, delta, mergedInline, blockAttrs: mergedBlock);
-        delta.insert('\n', mergedBlock);
-        return;
-      case 'blockquote':
-        _convertChildren(
-          node,
-          delta,
-          mergedInline,
-          blockAttrs: _mergeBlockAttributes(
-            mergedBlock,
-            fleather.ParchmentAttribute.bq.toJson(),
-          ),
-        );
-        _ensureTrailingNewline(delta);
-        return;
-      case 'ul':
-      case 'ol':
-        final listAttrs = tag == 'ol'
-            ? fleather.ParchmentAttribute.ol.toJson()
-            : fleather.ParchmentAttribute.ul.toJson();
-        for (final child in node.children) {
-          if (child.localName != 'li') continue;
-          _convertChildren(
-            child,
-            delta,
-            mergedInline,
-            blockAttrs: _mergeBlockAttributes(mergedBlock, listAttrs),
-          );
-          delta.insert('\n', _mergeBlockAttributes(mergedBlock, listAttrs));
-        }
-        return;
-      case 'li':
-        _convertChildren(node, delta, mergedInline, blockAttrs: mergedBlock);
-        delta.insert('\n', mergedBlock);
-        return;
-      default:
-        _convertChildren(node, delta, mergedInline, blockAttrs: mergedBlock);
-    }
-  }
-
-  void _convertChildren(
-    dom.Element element,
-    dq.Delta delta,
-    Map<String, dynamic> inlineAttrs, {
-    Map<String, dynamic>? blockAttrs,
-  }) {
-    for (final child in element.nodes) {
-      _convertNode(child, delta, inlineAttrs, blockAttrs: blockAttrs);
-    }
-  }
-
-  Map<String, dynamic> _attrsForElement(dom.Element element) {
-    final tag = element.localName ?? '';
-    final attrs = <String, dynamic>{};
-
+    // Handle inline formatting
     switch (tag) {
       case 'strong':
       case 'b':
-        attrs.addAll(fleather.ParchmentAttribute.bold.toJson());
+        newAttributes['bold'] = true;
         break;
       case 'em':
       case 'i':
-        attrs.addAll(fleather.ParchmentAttribute.italic.toJson());
+        newAttributes['italic'] = true;
         break;
       case 'u':
-        attrs.addAll(fleather.ParchmentAttribute.underline.toJson());
+        newAttributes['underline'] = true;
         break;
       case 's':
       case 'strike':
-        attrs.addAll(fleather.ParchmentAttribute.strikethrough.toJson());
+        newAttributes['strike'] = true;
         break;
       case 'a':
-        final href = element.attributes['href'];
+        final href = node.attributes['href'];
         if (href != null && href.isNotEmpty) {
-          attrs.addAll(fleather.ParchmentAttribute.link.fromString(href).toJson());
+          newAttributes['link'] = href;
         }
         break;
-      default:
-        break;
     }
 
-    final style = element.attributes['style'];
-    if (style != null && style.trim().isNotEmpty) {
-      attrs.addAll(_parseInlineStyle(style));
+    // Process children
+    for (final child in node.nodes) {
+      offset = _convertNode(child, document, offset, newAttributes);
     }
 
-    return attrs;
+    // Add newline for block elements
+    if (['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'br'].contains(tag)) {
+      document.insert(offset, '\n');
+      offset += 1;
+    }
+
+    return offset;
   }
 
-  Map<String, dynamic> _blockAttrsForElement(String tag) {
-    final attrs = <String, dynamic>{};
-    switch (tag) {
-      case 'h1':
-        attrs.addAll(fleather.ParchmentAttribute.h1.toJson());
-        break;
-      case 'h2':
-        attrs.addAll(fleather.ParchmentAttribute.h2.toJson());
-        break;
-      case 'h3':
-        attrs.addAll(fleather.ParchmentAttribute.h3.toJson());
-        break;
-      case 'h4':
-        attrs.addAll(fleather.ParchmentAttribute.h4.toJson());
-        break;
-      case 'h5':
-        attrs.addAll(fleather.ParchmentAttribute.h5.toJson());
-        break;
-      case 'h6':
-        attrs.addAll(fleather.ParchmentAttribute.h6.toJson());
-        break;
-      default:
-        break;
+  String _deltaToHtml(dynamic delta) {
+    final buffer = StringBuffer();
+    buffer.write('<!DOCTYPE html>\n<html>\n<head><meta charset="utf-8"></head>\n<body>\n');
+
+    final ops = delta.toList();
+    for (var i = 0; i < ops.length; i++) {
+      final op = ops[i];
+      final data = op.data;
+      
+      if (data is! String) continue;
+
+      final attributes = op.attributes ?? {};
+      final text = data.toString();
+
+      // Check if this is a newline with block attributes
+      if (text == '\n') {
+        if (i > 0) {
+          buffer.write('</p>\n');
+        }
+        if (i < ops.length - 1) {
+          final header = attributes['header'];
+          if (header != null) {
+            buffer.write('<h$header>');
+          } else {
+            buffer.write('<p>');
+          }
+        }
+        continue;
+      }
+
+      // Start paragraph if needed
+      if (i == 0 || (i > 0 && ops[i - 1].data == '\n')) {
+        final header = attributes['header'];
+        if (header != null) {
+          buffer.write('<h$header>');
+        } else {
+          buffer.write('<p>');
+        }
+      }
+
+      // Apply inline formatting
+      var formattedText = _escapeHtml(text);
+      
+      if (attributes['bold'] == true) {
+        formattedText = '<strong>$formattedText</strong>';
+      }
+      if (attributes['italic'] == true) {
+        formattedText = '<em>$formattedText</em>';
+      }
+      if (attributes['underline'] == true) {
+        formattedText = '<u>$formattedText</u>';
+      }
+      if (attributes['strike'] == true) {
+        formattedText = '<s>$formattedText</s>';
+      }
+      final link = attributes['link'];
+      if (link != null) {
+        formattedText = '<a href="$link">$formattedText</a>';
+      }
+
+      buffer.write(formattedText);
     }
-    return attrs;
+
+    buffer.write('</p>\n</body>\n</html>');
+    return buffer.toString();
   }
 
-  Map<String, dynamic> _parseInlineStyle(String style) {
-    final attrs = <String, dynamic>{};
-    final parts = style.split(';');
-    for (final part in parts) {
-      final kv = part.split(':');
-      if (kv.length != 2) continue;
-      final key = kv[0].trim().toLowerCase();
-      final value = kv[1].trim();
-      if (value.isEmpty) continue;
-      switch (key) {
-        case 'color':
-          final color = _parseCssColor(value);
-          if (color != null) {
-            attrs.addAll(
-              fleather.ParchmentAttribute.foregroundColor.withColor(color).toJson(),
-            );
-          }
-          break;
-        case 'background-color':
-          final color = _parseCssColor(value);
-          if (color != null) {
-            attrs.addAll(
-              fleather.ParchmentAttribute.backgroundColor.withColor(color).toJson(),
-            );
-          }
-          break;
-        case 'font-weight':
-          if (value == 'bold' || value == '700' || value == '600') {
-            attrs.addAll(fleather.ParchmentAttribute.bold.toJson());
-          }
-          break;
-        case 'font-style':
-          if (value == 'italic') {
-            attrs.addAll(fleather.ParchmentAttribute.italic.toJson());
-          }
-          break;
-        case 'text-decoration':
-          if (value.contains('underline')) {
-            attrs.addAll(fleather.ParchmentAttribute.underline.toJson());
-          }
-          if (value.contains('line-through')) {
-            attrs.addAll(fleather.ParchmentAttribute.strikethrough.toJson());
-          }
-          break;
-        default:
-          break;
-      }
-    }
-    return attrs;
-  }
-
-  Map<String, dynamic> _mergeInlineAttributes(
-    Map<String, dynamic> base,
-    Map<String, dynamic> extra,
-  ) {
-    if (base.isEmpty) return extra;
-    if (extra.isEmpty) return base;
-    final merged = <String, dynamic>{}..addAll(base)..addAll(extra);
-    return merged;
-  }
-
-  Map<String, dynamic>? _mergeBlockAttributes(
-    Map<String, dynamic>? base,
-    Map<String, dynamic>? extra,
-  ) {
-    if (base == null || base.isEmpty) return extra;
-    if (extra == null || extra.isEmpty) return base;
-    final merged = <String, dynamic>{}..addAll(base)..addAll(extra);
-    return merged;
-  }
-
-  int? _parseCssColor(String value) {
-    final trimmed = value.trim();
-    if (trimmed.isEmpty) return null;
-    if (trimmed.startsWith('#')) {
-      final hex = trimmed.substring(1);
-      if (hex.length == 6) {
-        return int.tryParse('FF$hex', radix: 16);
-      }
-      if (hex.length == 8) {
-        return int.tryParse(hex, radix: 16);
-      }
-      if (hex.length == 3) {
-        final r = hex[0] * 2;
-        final g = hex[1] * 2;
-        final b = hex[2] * 2;
-        return int.tryParse('FF$r$g$b', radix: 16);
-      }
-      return null;
-    }
-    final rgbMatch = RegExp(r'rgba?\(([^)]+)\)').firstMatch(trimmed);
-    if (rgbMatch != null) {
-      final parts = rgbMatch.group(1)!.split(',').map((e) => e.trim()).toList();
-      if (parts.length < 3) return null;
-      final r = int.tryParse(parts[0]) ?? 0;
-      final g = int.tryParse(parts[1]) ?? 0;
-      final b = int.tryParse(parts[2]) ?? 0;
-      var a = 255;
-      if (parts.length >= 4) {
-        final alpha = double.tryParse(parts[3]) ?? 1.0;
-        a = (alpha.clamp(0.0, 1.0) * 255).round();
-      }
-      return (a << 24) | (r << 16) | (g << 8) | b;
-    }
-    return null;
+  String _escapeHtml(String text) {
+    return text
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
   }
 }
 

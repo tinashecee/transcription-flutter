@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'auth_controller.dart';
+import '../../services/update_manager.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -148,7 +149,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           ),
                         ),
                         child: Text(
-                          'Version 2.1.6',
+                          'Version ${UpdateManager.appDisplayVersion ?? '2.1.6'}',
                           style: GoogleFonts.roboto(
                             color: Colors.white,
                             fontSize: 14,
