@@ -127,7 +127,7 @@ class _RecordingsScreenState extends ConsumerState<RecordingsScreen> {
                         ),
                       ),
                       Text(
-                        'v${UpdateManager.appDisplayVersion ?? '2.1.6'}',
+                        'v${UpdateManager.appDisplayVersion ?? '2.1.7'}',
                         style: GoogleFonts.roboto(
                           color: Colors.white.withOpacity(0.7),
                           fontSize: 11,
@@ -763,30 +763,36 @@ class _AssignToDialogState extends ConsumerState<_AssignToDialog> {
   }
 
   Future<void> _loadUsers() async {
+    if (!mounted) return;
     setState(() => _isLoadingUsers = true);
     try {
       final users = await ref.read(assignmentRepositoryProvider).getAvailableUsers();
+      if (!mounted) return;
       setState(() {
         _users = users;
         _isLoadingUsers = false;
       });
     } catch (_) {
+      if (!mounted) return;
       setState(() => _isLoadingUsers = false);
     }
   }
 
   Future<void> _loadAssigned() async {
+    if (!mounted) return;
     setState(() => _isLoadingAssigned = true);
     try {
       final assigned =
           await ref.read(assignmentRepositoryProvider).getAssignedUsers(
                 widget.recordingId,
               );
+      if (!mounted) return;
       setState(() {
         _assigned = assigned;
         _isLoadingAssigned = false;
       });
     } catch (_) {
+      if (!mounted) return;
       setState(() => _isLoadingAssigned = false);
     }
   }
@@ -1432,6 +1438,7 @@ class _CourtFilterSidebarState extends ConsumerState<_CourtFilterSidebar> {
   }
 
   Future<void> _loadCourtsAndRooms() async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -1444,8 +1451,10 @@ class _CourtFilterSidebarState extends ConsumerState<_CourtFilterSidebar> {
       ]);
       _courts = (results[0] as List<String>)..sort();
       _courtroomsByCourt = results[1] as Map<String, List<String>>;
+      if (!mounted) return;
       setState(() => _isLoading = false);
     } catch (error) {
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _errorMessage = mapDioError(error);
