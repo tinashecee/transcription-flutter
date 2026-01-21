@@ -6,9 +6,11 @@ import 'app/config.dart';
 import 'app/providers.dart';
 import 'services/logging_service.dart';
 import 'services/update_manager.dart';
+import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  JustAudioMediaKit.ensureInitialized();
 
   final config = await AppConfig.load();
   final loggingService = LoggingService();

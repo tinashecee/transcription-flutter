@@ -325,6 +325,6 @@ class AudioPlayerController extends StateNotifier<AudioPlayerState> {
 }
 
 final audioPlayerControllerProvider =
-    StateNotifierProvider<AudioPlayerController, AudioPlayerState>((ref) {
+    StateNotifierProvider.autoDispose<AudioPlayerController, AudioPlayerState>((ref) {
   return AudioPlayerController(ref);
 });

@@ -11,7 +11,9 @@ import '../comments/comments_panel.dart';
 import '../player/audio_player_controller.dart';
 import '../player/waveform_scrubber.dart';
 import '../transcript/transcript_controller.dart';
+import '../widgets/collapsible_sidebar.dart';
 import '../../data/providers.dart';
+import '../../domain/repositories/recording_repository.dart';
 import '../../domain/entities/recording.dart';
 import '../../domain/entities/assigned_user.dart';
 import '../../services/auth_session.dart';
@@ -65,6 +67,33 @@ class _RecordingDetailScreenState
     super.dispose();
   }
 
+  String _formatTimeAgo(String? timestamp) {
+    if (timestamp == null || timestamp.isEmpty) return '';
+    try {
+      final dateTime = DateTime.parse(timestamp);
+      final now = DateTime.now();
+      final difference = now.difference(dateTime);
+      if (difference.inSeconds < 60) {
+        return 'just now';
+      } else if (difference.inMinutes < 60) {
+        final mins = difference.inMinutes;
+        return '$mins ${mins == 1 ? 'min' : 'mins'} ago';
+      } else if (difference.inHours < 24) {
+        final hours = difference.inHours;
+        return '$hours ${hours == 1 ? 'hr' : 'hrs'} ago';
+      } else if (difference.inDays < 7) {
+        final days = difference.inDays;
+        return '$days ${days == 1 ? 'day' : 'days'} ago';
+      } else {
+        final month = dateTime.month.toString().padLeft(2, '0');
+        final day = dateTime.day.toString().padLeft(2, '0');
+        return '$month/$day';
+      }
+    } catch (e) {
+      return '';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final recordingAsync = ref.watch(recordingDetailProvider(widget.recordingId));
@@ -74,40 +103,9 @@ class _RecordingDetailScreenState
     final currentUserId = ref.watch(authSessionProvider).user?.id;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF0F4F3),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF115343),
-        foregroundColor: Colors.white,
-        leading: IconButton(
-          onPressed: () {
-            ref.invalidate(audioPlayerControllerProvider);
-            ref.read(recordingsControllerProvider.notifier).loadInitial();
-            context.go('/recordings');
-          },
-          icon: const Icon(Icons.arrow_back),
-          tooltip: 'Back to Recordings',
-        ),
-        title: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Recording Player',
-              style: GoogleFonts.roboto(fontWeight: FontWeight.w600),
-            ),
-            Text(
-              'v${UpdateManager.appDisplayVersion ?? '2.1.7'}',
-              style: GoogleFonts.roboto(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: Colors.white.withOpacity(0.7),
-              ),
-            ),
-          ],
-        ),
-        actions: const [],
-      ),
-      body: recordingAsync.when(
+      backgroundColor: const Color(0xFFF5F7FA),
+      body: SafeArea(
+        child: recordingAsync.when(
         data: (recording) {
           if (_loadedRecordingId != recording.id) {
             _loadedRecordingId = recording.id;
@@ -129,381 +127,445 @@ class _RecordingDetailScreenState
           print('[RecordingDetail] Final isAssignedToMe=$isAssignedToMe (loading=${assignedUsersAsync.isLoading})');
           
           return Stack(
+            fit: StackFit.expand,
             children: [
-              Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  children: [
-                    Expanded(
-                      child: Row(
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Collapsible sidebar for court filtering
+                  if (!_transcriptExpanded)
+                    CollapsibleSidebar(
+                      initiallyCollapsed: true,
+                      selectedCourt: null,
+                      selectedCourtroom: null,
+                      onCourtSelected: (court) {
+                        // Update controller state explicitly before navigating
+                        ref.read(recordingsControllerProvider.notifier).updateFilters(
+                              RecordingFilters(
+                                tab: RecordingTab.all,
+                                court: court,
+                              ),
+                            );
+
+                        // Navigate back to recordings with filter
+                        if (court != null) {
+                          context.go('/recordings?court=$court');
+                        } else {
+                          context.go('/recordings');
+                        }
+                      },
+                      onCourtroomSelected: (_) {},
+                    ),
+                  // Main content area
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 16, right: 16, bottom: 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (!_transcriptExpanded)
-                            Expanded(
-                              flex: 4,
-                              child: Container(
-                                padding: const EdgeInsets.all(20),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF8F9FA),
-                                  borderRadius: BorderRadius.circular(16),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.08),
-                                      blurRadius: 8,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                          // Back Button
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: InkWell(
+                              onTap: () {
+                                // Reset to "All Recordings" before navigating back
+                                ref.read(recordingsControllerProvider.notifier).updateFilters(
+                                      const RecordingFilters(tab: RecordingTab.all),
+                                    );
+                                context.go('/recordings');
+                              },
+                              borderRadius: BorderRadius.circular(8),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
+                                    const Icon(Icons.arrow_back_rounded, size: 20, color: Color(0xFF115343)),
+                                    const SizedBox(width: 8),
                                     Text(
-                                      'Case: ${recording.title} (${recording.caseNumber})',
+                                      'Back to Dashboard',
                                       style: GoogleFonts.roboto(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
                                         color: const Color(0xFF115343),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 16),
-                                    Container(
-                                      padding: const EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFE9ECEF),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: WaveformScrubber(
-                                        position: playerState.position,
-                                        duration: playerState.duration,
-                                        onSeek: playerController.seek,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 16),
-                                    Center(
-                                      child: Text(
-                                        '${_formatTimestamp(playerState.position)} / ${_formatTimestamp(playerState.duration)}',
-                                        style: GoogleFonts.roboto(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w500,
-                                          color: const Color(0xFF115343),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 16),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        _PlaybackButton(
-                                          icon: Icons.replay_10,
-                                          onPressed: playerController.rewind,
-                                        ),
-                                        const SizedBox(width: 16),
-                                        _PlaybackButton(
-                                          icon: playerState.isPlaying
-                                              ? Icons.pause
-                                              : Icons.play_arrow,
-                                          onPressed: playerController.playPause,
-                                        ),
-                                        const SizedBox(width: 16),
-                                        _PlaybackButton(
-                                          icon: Icons.forward_10,
-                                          onPressed: playerController.forward,
-                                        ),
-                                        const SizedBox(width: 16),
-                                        _PlaybackButton(
-                                          icon: Icons.download,
-                                          onPressed: () => _downloadAudio(recording),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 16),
-                                    Center(
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 12, vertical: 8),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(10),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.black.withOpacity(0.05),
-                                              blurRadius: 4,
-                                              offset: const Offset(0, 2),
-                                            ),
-                                          ],
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text(
-                                              'Playback Speed:',
-                                              style: GoogleFonts.roboto(
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            DropdownButton<double>(
-                                              value: playerState.speed,
-                                              items: const [
-                                                0.5,
-                                                1.0,
-                                                1.5,
-                                                2.0
-                                              ]
-                                                  .map(
-                                                    (speed) => DropdownMenuItem(
-                                                      value: speed,
-                                                      child: Text('${speed}x'),
-                                                    ),
-                                                  )
-                                                  .toList(),
-                                              onChanged: (value) {
-                                                if (value != null) {
-                                                  playerController.setSpeed(value);
-                                                }
-                                              },
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 20),
-                                    Expanded(
-                                      child: Container(
-                                        padding: const EdgeInsets.all(16),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              'Annotations',
-                                              style: GoogleFonts.roboto(
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 8),
-                                            Expanded(
-                                              child: _AnnotationsList(
-                                                annotations: recording.annotations,
-                                                onSeek: (position) =>
-                                                    playerController.seek(position),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
                             ),
+                          ),
+                          Expanded(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                          if (!_transcriptExpanded)
+                            Expanded(
+                              flex: 3,
+                              child: Hero(
+                                tag: widget.recordingId,
+                                child: Container(
+                                  padding: const EdgeInsets.all(20),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(24),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.04),
+                                        blurRadius: 20,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      // Header: Recording Title + Play Button
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            'Recording',
+                                            style: GoogleFonts.roboto(
+                                              fontSize: 20,
+                                              fontWeight: FontWeight.w700,
+                                              color: const Color(0xFF111827), // Dark grey/black
+                                            ),
+                                          ),
+                                          // Play button moved to controls row below
+                                        ],
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        recording.title,
+                                        style: GoogleFonts.roboto(
+                                          fontSize: 14,
+                                          color: Colors.grey[500],
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 24),
+                                      
+                                      // Waveform with side timestamps
+                                      Row(
+                                        children: [
+                                          Text(
+                                            _formatTimestamp(playerState.position),
+                                            style: GoogleFonts.robotoMono(
+                                              fontSize: 12,
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: SizedBox(
+                                              height: 48,
+                                              child: WaveformScrubber(
+                                                position: playerState.position,
+                                                duration: playerState.duration,
+                                                onSeek: playerController.seek,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Text(
+                                            '-${_formatTimestamp(playerState.duration - playerState.position)}',
+                                            style: GoogleFonts.robotoMono(
+                                              fontSize: 12,
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 24),
+                                      
+                                      // Playback Controls (Rewind - Play/Pause - Forward)
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(Icons.replay_10, size: 24),
+                                            onPressed: playerController.rewind,
+                                            color: Colors.grey[700],
+                                            tooltip: 'Rewind 10s',
+                                          ),
+                                          const SizedBox(width: 24),
+                                          // Central Play/Pause Button
+                                          Container(
+                                            width: 56,
+                                            height: 56,
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF115343),
+                                              shape: BoxShape.circle,
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: const Color(0xFF115343).withOpacity(0.3),
+                                                  blurRadius: 12,
+                                                  offset: const Offset(0, 4),
+                                                ),
+                                              ],
+                                            ),
+                                            child: IconButton(
+                                              icon: Icon(
+                                                playerState.isPlaying ? Icons.pause : Icons.play_arrow,
+                                                size: 32,
+                                                color: Colors.white,
+                                              ),
+                                              onPressed: playerController.playPause,
+                                              tooltip: playerState.isPlaying ? 'Pause' : 'Play',
+                                            ),
+                                          ),
+                                          const SizedBox(width: 24),
+                                          IconButton(
+                                            icon: const Icon(Icons.forward_10, size: 24),
+                                            onPressed: playerController.forward,
+                                            color: Colors.grey[700],
+                                            tooltip: 'Forward 10s',
+                                          ),
+                                        ],
+                                      ),
+                                      
+                                      // Speed & Download Row - Compact
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 8),
+                                        child: Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white,
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  const Icon(Icons.speed, size: 16, color: Color(0xFF115343)),
+                                                  const SizedBox(width: 4),
+                                                  DropdownButton<double>(
+                                                    value: playerState.speed,
+                                                    underline: const SizedBox(),
+                                                    isDense: true,
+                                                    style: GoogleFonts.roboto(fontSize: 13, color: Colors.black87),
+                                                    items: const [0.5, 1.0, 1.5, 2.0]
+                                                        .map((speed) => DropdownMenuItem(
+                                                              value: speed,
+                                                              child: Text('${speed}x'),
+                                                            ))
+                                                        .toList(),
+                                                    onChanged: (value) {
+                                                      if (value != null) playerController.setSpeed(value);
+                                                    },
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            IconButton(
+                                              icon: const Icon(Icons.download, size: 20),
+                                              onPressed: () => _downloadAudio(recording),
+                                              tooltip: 'Download',
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      
+                                      const SizedBox(height: 24),
+                                      
+                                      // Annotations - Integrated & Readable
+                                      Expanded(
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(vertical: 16),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFF8F9FA),
+                                            borderRadius: BorderRadius.circular(20),
+                                            border: Border.all(
+                                              color: const Color(0xFF115343).withOpacity(0.08),
+                                            ),
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Padding(
+                                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                                child: Row(
+                                                  children: [
+                                                    const Icon(Icons.bookmark, size: 18, color: Color(0xFF115343)),
+                                                    const SizedBox(width: 8),
+                                                    Text(
+                                                      'Annotations',
+                                                      style: GoogleFonts.roboto(
+                                                        fontSize: 16,
+                                                        fontWeight: FontWeight.w700,
+                                                        color: const Color(0xFF115343),
+                                                      ),
+                                                    ),
+                                                    const Spacer(),
+                                                    Container(
+                                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                      decoration: BoxDecoration(
+                                                        color: const Color(0xFF115343).withOpacity(0.1),
+                                                        borderRadius: BorderRadius.circular(10),
+                                                      ),
+                                                      child: Text(
+                                                        '${recording.annotations.length}',
+                                                        style: GoogleFonts.roboto(
+                                                          fontSize: 12,
+                                                          fontWeight: FontWeight.w600,
+                                                          color: const Color(0xFF115343),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const SizedBox(height: 12),
+                                              Expanded(
+                                                child: _AnnotationsList(
+                                                  annotations: recording.annotations,
+                                                  onSeek: (position) => playerController.seek(position),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
                           if (!_transcriptExpanded) const SizedBox(width: 20),
                           Expanded(
-                            flex: _transcriptExpanded ? 1 : 6,
+                            flex: _transcriptExpanded ? 1 : 7,
                             child: Container(
-                              padding: const EdgeInsets.all(20),
+                              padding: const EdgeInsets.all(24),
                               decoration: BoxDecoration(
                                 color: Colors.white,
-                                borderRadius: BorderRadius.circular(16),
+                                borderRadius: BorderRadius.circular(24),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withOpacity(0.08),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 2),
+                                    color: Colors.black.withOpacity(0.04),
+                                    blurRadius: 20,
+                                    offset: const Offset(0, 4),
                                   ),
                                 ],
                               ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                            Text(
-                              'Transcript',
-                              style: GoogleFonts.roboto(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
-                                color: const Color(0xFF115343),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 6,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                // Save - only enabled if assigned
-                                FilledButton.icon(
-                                  onPressed: isAssignedToMe
-                                      ? () async {
-                                          final success = await ref
-                                              .read(transcriptControllerProvider.notifier)
-                                              .save();
-                                          if (!context.mounted) return;
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: Text(success
-                                                  ? 'Transcript saved successfully'
-                                                  : 'Failed to save transcript'),
-                                              backgroundColor: success
-                                                  ? const Color(0xFF4CAF50)
-                                                  : const Color(0xFFD32F2F),
+                                  // Title Row with expand/menu controls
+                                  Row(
+                                    children: [
+                                      Text(
+                                        'Transcript',
+                                        style: GoogleFonts.roboto(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w700,
+                                          color: const Color(0xFF115343),
+                                        ),
+                                      ),
+                                      if (_transcriptionStatus != null && _transcriptionStatus!['status'] == 'completed') ...[
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey[200],
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Text(
+                                            'Completed ${_formatTimeAgo(_transcriptionStatus!['completed_at'])}',
+                                            style: GoogleFonts.roboto(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w500,
+                                              color: Colors.grey[600],
                                             ),
-                                          );
-                                        }
-                                      : null,
-                                  icon: const Icon(Icons.save, size: 14),
-                                  label: const Text('Save'),
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: isAssignedToMe
-                                        ? const Color(0xFF2E7D32)
-                                        : Colors.grey,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 8,
-                                    ),
-                                    textStyle: const TextStyle(fontSize: 12),
-                                  ),
-                                ),
-                                // Export - only enabled if assigned
-                                OutlinedButton.icon(
-                                  onPressed: isAssignedToMe
-                                      ? () => _exportTranscript(recording)
-                                      : null,
-                                  icon: const Icon(Icons.file_upload, size: 14),
-                                  label: const Text('Export'),
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 8,
-                                    ),
-                                    textStyle: const TextStyle(fontSize: 12),
-                                  ),
-                                ),
-                                // Expand/Collapse - always available
-                                OutlinedButton.icon(
-                                  onPressed: () => setState(
-                                      () => _transcriptExpanded = !_transcriptExpanded),
-                                  icon: const Icon(Icons.expand, size: 14),
-                                  label: Text(
-                                    _transcriptExpanded
-                                        ? 'Default View'
-                                        : 'Expand Editor',
-                                  ),
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 8,
-                                    ),
-                                    textStyle: const TextStyle(fontSize: 12),
-                                  ),
-                                ),
-                                // Retranscribe - only enabled if assigned
-                                OutlinedButton.icon(
-                                  onPressed: isAssignedToMe
-                                      ? () => _handleRetranscribe(context, recording)
-                                      : null,
-                                  icon: const Icon(Icons.refresh, size: 14),
-                                  label: const Text('Retranscribe'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: isAssignedToMe
-                                        ? Colors.redAccent
-                                        : Colors.grey,
-                                    side: BorderSide(
-                                      color: isAssignedToMe
-                                          ? Colors.redAccent
-                                          : Colors.grey,
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 8,
-                                    ),
-                                    textStyle: const TextStyle(fontSize: 12),
-                                  ),
-                                ),
-                                // Status dropdown - only enabled if assigned
-                                _StatusDropdown(
-                                  recordingId: recording.id,
-                                  currentStatus: recording.status,
-                                  isEnabled: isAssignedToMe,
-                                ),
-                                // My List button - always available
-                                _MyListButton(
-                                  recordingId: recording.id,
-                                  currentUserId: currentUserId,
-                                  assignedUsersAsync: assignedUsersAsync,
-                                ),
-                                // Refresh - always available
-                                OutlinedButton.icon(
-                                  onPressed: () => ref
-                                      .refresh(recordingDetailProvider(widget.recordingId)),
-                                  icon: const Icon(Icons.sync, size: 14),
-                                  label: const Text('Refresh'),
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 8,
-                                    ),
-                                    textStyle: const TextStyle(fontSize: 12),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            _TranscriptionStatusPanel(status: _transcriptionStatus),
-                            const SizedBox(height: 8),
-                            assignedUsersAsync.when(
-                              data: (assignedUsers) {
-                                final isAssignedToMe = currentUserId != null &&
-                                    assignedUsers.any(
-                                      (user) => user.userId == currentUserId,
-                                    );
-                                return Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _AssignmentStatusIndicator(
-                                      isAssigned: isAssignedToMe,
-                                    ),
-                                    if (assignedUsers.isNotEmpty) ...[
-                                      const SizedBox(height: 8),
-                                      Wrap(
-                                        spacing: 6,
-                                        runSpacing: 6,
-                                        children: assignedUsers
-                                            .map(
-                                              (user) => Chip(
-                                                label: Text(
-                                                  user.name.isNotEmpty
-                                                      ? user.name
-                                                      : user.email,
-                                                  style: const TextStyle(fontSize: 11),
-                                                ),
-                                                backgroundColor:
-                                                    Colors.grey.shade200,
-                                                materialTapTargetSize:
-                                                    MaterialTapTargetSize.shrinkWrap,
-                                              ),
-                                            )
-                                            .toList(),
+                                          ),
+                                        ),
+                                      ],
+                                      const Spacer(),
+                                      IconButton(
+                                        onPressed: () => setState(() => _transcriptExpanded = !_transcriptExpanded),
+                                        icon: Icon(_transcriptExpanded ? Icons.fullscreen_exit : Icons.fullscreen),
+                                        tooltip: _transcriptExpanded ? 'Collapse' : 'Expand Editor',
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      MenuAnchor(
+                                        builder: (context, controller, child) => IconButton(
+                                          icon: const Icon(Icons.more_vert),
+                                          onPressed: () {
+                                            if (controller.isOpen) {
+                                              controller.close();
+                                            } else {
+                                              controller.open();
+                                            }
+                                          },
+                                          tooltip: 'More Actions',
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                        ),
+                                        menuChildren: [
+                                          MenuItemButton(
+                                            leadingIcon: const Icon(Icons.check_circle_outline, size: 18),
+                                            onPressed: isAssignedToMe ? () async {
+                                              await ref.read(transcriptControllerProvider.notifier).save();
+                                              if (context.mounted) {
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  const SnackBar(content: Text('Transcript saved successfully')),
+                                                );
+                                              }
+                                            } : null,
+                                            child: const Text('Save Changes'),
+                                          ),
+                                          MenuItemButton(
+                                            leadingIcon: const Icon(Icons.file_download_outlined, size: 18),
+                                            onPressed: () => _exportTranscript(recording),
+                                            child: const Text('Export to DOCX'),
+                                          ),
+                                          if (isAssignedToMe)
+                                            MenuItemButton(
+                                              leadingIcon: const Icon(Icons.history, size: 18),
+                                              onPressed: () => _handleRetranscribe(context, recording),
+                                              child: const Text('Retranscribe'),
+                                            ),
+                                          MenuItemButton(
+                                            leadingIcon: const Icon(Icons.sync, size: 18),
+                                            onPressed: () => ref.refresh(recordingDetailProvider(widget.recordingId)),
+                                            child: const Text('Refresh Data'),
+                                          ),
+                                        ],
                                       ),
                                     ],
-                                  ],
-                                );
-                              },
-                              loading: () => _AssignmentStatusIndicator(
-                                isAssigned: assignmentState.assignment != null,
-                              ),
-                              error: (_, __) => _AssignmentStatusIndicator(
-                                isAssigned: assignmentState.assignment != null,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Expanded(
-                              child: TranscriptEditor(
-                                recordingId: recording.id,
-                                isAssigned: isAssignedToMe,
-                              ),
-                            ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  // Centered Action Buttons Row
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      _StatusDropdown(
+                                        recordingId: recording.id,
+                                        currentStatus: recording.status,
+                                        isEnabled: isAssignedToMe,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      _MyListButton(
+                                        recordingId: recording.id,
+                                        currentUserId: currentUserId,
+                                        assignedUsersAsync: assignedUsersAsync,
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Expanded(
+                                    child: TranscriptEditor(
+                                      recordingId: recording.id,
+                                      isAssigned: isAssignedToMe,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -514,6 +576,9 @@ class _RecordingDetailScreenState
                   ],
                 ),
               ),
+            ),
+          ],
+        ),
               Positioned(
                 right: 20,
                 bottom: 20,
@@ -546,6 +611,7 @@ class _RecordingDetailScreenState
             ],
           ),
         ),
+      ),
       ),
     );
   }
@@ -1033,247 +1099,7 @@ class _RecordingDetailScreenState
   }
 }
 
-class _PlaybackButton extends StatelessWidget {
-  const _PlaybackButton({
-    required this.icon,
-    required this.onPressed,
-  });
 
-  final IconData icon;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return ElevatedButton(
-      onPressed: onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: const Color(0xFF115343),
-        foregroundColor: Colors.white,
-        shape: const CircleBorder(),
-        padding: const EdgeInsets.all(16),
-      ),
-      child: Icon(icon),
-    );
-  }
-}
-
-class _TranscriptionStatusPanel extends StatelessWidget {
-  const _TranscriptionStatusPanel({required this.status});
-
-  final Map<String, dynamic>? status;
-
-  String _formatTimestamp(String? timestamp) {
-    if (timestamp == null || timestamp.isEmpty) return '';
-    
-    try {
-      final dateTime = DateTime.parse(timestamp);
-      final now = DateTime.now();
-      final difference = now.difference(dateTime);
-      
-      // If less than 1 minute ago
-      if (difference.inSeconds < 60) {
-        return 'just now';
-      }
-      // If less than 1 hour ago
-      else if (difference.inMinutes < 60) {
-        final mins = difference.inMinutes;
-        return '$mins ${mins == 1 ? 'minute' : 'minutes'} ago';
-      }
-      // If less than 24 hours ago
-      else if (difference.inHours < 24) {
-        final hours = difference.inHours;
-        return '$hours ${hours == 1 ? 'hour' : 'hours'} ago';
-      }
-      // If less than 7 days ago
-      else if (difference.inDays < 7) {
-        final days = difference.inDays;
-        return '$days ${days == 1 ? 'day' : 'days'} ago';
-      }
-      // Otherwise show formatted date
-      else {
-        final month = dateTime.month.toString().padLeft(2, '0');
-        final day = dateTime.day.toString().padLeft(2, '0');
-        final year = dateTime.year;
-        final hour = dateTime.hour.toString().padLeft(2, '0');
-        final minute = dateTime.minute.toString().padLeft(2, '0');
-        return '$month/$day/$year at $hour:$minute';
-      }
-    } catch (e) {
-      return timestamp;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final state = (status?['transcription_state'] ?? 'none')
-        .toString()
-        .toLowerCase();
-    final activeJobs = status?['active_jobs'] as List<dynamic>? ?? [];
-    final lastTranscribedAt = status?['last_transcribed_at'] as String?;
-
-    String label = 'No Transcription';
-    String details = 'No transcription job has been created. Click "Retranscribe" to start transcription.';
-    IconData icon = Icons.circle;
-    Color color = Colors.grey;
-
-    if (state == 'queued') {
-      label = 'Transcription Queued';
-      final job = activeJobs.isNotEmpty ? activeJobs.first : null;
-      final queuePos = job is Map ? job['queue_position'] : null;
-      details = queuePos == null ? 'Waiting in queue...' : 'Position $queuePos in queue';
-      icon = Icons.access_time;
-      color = Colors.orange;
-    } else if (state == 'processing') {
-      label = 'Transcription Processing';
-      icon = Icons.sync;
-      color = Colors.blue;
-      
-      // Calculate elapsed time from started_at
-      if (activeJobs.isNotEmpty) {
-        final job = activeJobs.first as Map<String, dynamic>?;
-        final startedAt = job?['started_at'] as String?;
-        
-        if (startedAt != null && startedAt.isNotEmpty) {
-          try {
-            final started = DateTime.parse(startedAt);
-            final now = DateTime.now();
-            final elapsed = now.difference(started);
-            
-            if (elapsed.inSeconds >= 0 && elapsed.inSeconds < 86400) {
-              final minutes = elapsed.inMinutes;
-              final seconds = elapsed.inSeconds % 60;
-              if (minutes > 0) {
-                details = 'Started ${minutes}m ${seconds}s ago';
-              } else {
-                details = 'Started ${seconds}s ago';
-              }
-            } else {
-              details = 'Processing audio...';
-            }
-          } catch (e) {
-            details = 'Processing audio...';
-          }
-        } else {
-          details = 'Processing audio...';
-        }
-      } else {
-        details = 'Processing audio...';
-      }
-    } else if (state == 'completed') {
-      label = 'Transcription Completed';
-      final formattedTime = _formatTimestamp(lastTranscribedAt);
-      details = formattedTime.isEmpty
-          ? 'Transcription is ready'
-          : 'Completed $formattedTime';
-      icon = Icons.check_circle;
-      color = Colors.green;
-    } else if (state == 'failed') {
-      label = 'Transcription Failed';
-      icon = Icons.error;
-      color = Colors.red;
-      
-      // Try to get error message from last_job
-      final lastJob = status?['last_job'] as Map<String, dynamic>?;
-      final errorMessage = lastJob?['error_message'] as String?;
-      
-      if (errorMessage != null && errorMessage.isNotEmpty) {
-        // Truncate long error messages
-        final truncated = errorMessage.length > 150
-            ? '${errorMessage.substring(0, 150)}...'
-            : errorMessage;
-        details = 'Error: $truncated';
-      } else {
-        details = 'Transcription job failed. You can retry using the Retranscribe button.';
-      }
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FA),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.withOpacity(0.2)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: color),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: GoogleFonts.roboto(fontWeight: FontWeight.w600),
-                ),
-                Text(
-                  details,
-                  style: GoogleFonts.roboto(fontSize: 12, color: Colors.grey[600]),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              state.toUpperCase(),
-              style: GoogleFonts.roboto(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: color,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AssignmentStatusIndicator extends StatelessWidget {
-  const _AssignmentStatusIndicator({required this.isAssigned});
-
-  final bool isAssigned;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isAssigned ? const Color(0xFFD4EDDA) : const Color(0xFFF8D7DA),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isAssigned ? const Color(0xFFC3E6CB) : const Color(0xFFF5C6CB),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.info,
-            color: isAssigned ? const Color(0xFF155724) : const Color(0xFF721C24),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              isAssigned
-                  ? 'You are assigned to this recording. You can edit the transcript.'
-                  : 'You are not assigned to this recording. You can only add comments.',
-              style: GoogleFonts.roboto(
-                color: isAssigned ? const Color(0xFF155724) : const Color(0xFF721C24),
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _AnnotationsList extends StatelessWidget {
   const _AnnotationsList({
@@ -1295,9 +1121,9 @@ class _AnnotationsList extends StatelessWidget {
       );
     }
 
-    return ListView.separated(
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       itemCount: annotations.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
       itemBuilder: (context, index) {
         final annotation = annotations[index];
         final rawTimestamp = annotation['timestamp'] ??
@@ -1311,22 +1137,67 @@ class _AnnotationsList extends StatelessWidget {
             '';
         final displayTimestamp = _formatAnnotationTimestamp(rawTimestamp);
 
-        return ListTile(
-          dense: true,
-          title: Text(
-            displayTimestamp,
-            style: GoogleFonts.roboto(fontWeight: FontWeight.w600),
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Material(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () {
+                final seconds = _parseTimestampToSeconds(rawTimestamp);
+                if (seconds != null) {
+                  onSeek(Duration(milliseconds: (seconds * 1000).round()));
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.grey.withOpacity(0.1),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF115343).withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        displayTimestamp,
+                        style: GoogleFonts.robotoMono(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF115343),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        details.toString(),
+                        style: GoogleFonts.roboto(
+                          fontSize: 13,
+                          color: const Color(0xFF374151),
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.play_circle_outline,
+                      size: 18,
+                      color: const Color(0xFF115343).withOpacity(0.5),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
-          subtitle: Text(
-            details.toString(),
-            style: GoogleFonts.roboto(fontSize: 12),
-          ),
-          onTap: () {
-            final seconds = _parseTimestampToSeconds(rawTimestamp);
-            if (seconds != null) {
-              onSeek(Duration(milliseconds: (seconds * 1000).round()));
-            }
-          },
         );
       },
     );
@@ -1444,53 +1315,139 @@ class _MyListButtonState extends ConsumerState<_MyListButton> {
       data: (assignedUsers) {
         final isAssignedToMe = widget.currentUserId != null &&
             assignedUsers.any((user) => user.userId == widget.currentUserId);
-        return OutlinedButton.icon(
-          onPressed: _isOperationInProgress
-              ? null
-              : () => _handleMyListAction(isAssignedToMe),
-          icon: _isOperationInProgress
-              ? const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Icon(
-                  isAssignedToMe ? Icons.remove_circle_outline : Icons.playlist_add,
-                  size: 14,
+        
+        // Use green for "Add" action, amber/orange for "Remove" (already assigned)
+        final buttonColor = isAssignedToMe 
+            ? const Color(0xFFFF9800) // Orange for assigned state
+            : const Color(0xFF115343); // Green for add action
+        
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _isOperationInProgress 
+                ? null 
+                : () => _handleMyListAction(isAssignedToMe),
+            borderRadius: BorderRadius.circular(12),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: _isOperationInProgress
+                      ? [Colors.grey.shade400, Colors.grey.shade500]
+                      : [buttonColor, buttonColor.withOpacity(0.85)],
                 ),
-          label: Text(
-            _isOperationInProgress
-                ? (isAssignedToMe ? 'Removing...' : 'Adding...')
-                : (isAssignedToMe ? 'Remove from My List' : 'Add to My List'),
-          ),
-          style: OutlinedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            textStyle: const TextStyle(fontSize: 12),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: buttonColor.withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_isOperationInProgress)
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  else
+                    Icon(
+                      isAssignedToMe ? Icons.remove_circle_outline : Icons.playlist_add,
+                      size: 16,
+                      color: Colors.white,
+                    ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _isOperationInProgress
+                        ? (isAssignedToMe ? 'Removing...' : 'Adding...')
+                        : (isAssignedToMe ? 'Remove from List' : 'Add to My List'),
+                    style: GoogleFonts.roboto(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         );
       },
-      loading: () => OutlinedButton.icon(
-        onPressed: null,
-        icon: const SizedBox(
-          width: 14,
-          height: 14,
-          child: CircularProgressIndicator(strokeWidth: 2),
+      loading: () => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade300,
+          borderRadius: BorderRadius.circular(12),
         ),
-        label: const Text('Loading...'),
-        style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          textStyle: const TextStyle(fontSize: 12),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.grey.shade600),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Loading...',
+              style: GoogleFonts.roboto(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey.shade600,
+              ),
+            ),
+          ],
         ),
       ),
-      error: (_, __) => OutlinedButton.icon(
-        onPressed: widget.currentUserId == null
-            ? null
-            : () => _handleMyListAction(false),
-        icon: const Icon(Icons.playlist_add, size: 14),
-        label: const Text('Add to My List'),
-        style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          textStyle: const TextStyle(fontSize: 12),
+      error: (_, __) => Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.currentUserId == null
+              ? null
+              : () => _handleMyListAction(false),
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF115343), Color(0xFF0D3F33)],
+              ),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF115343).withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.playlist_add, size: 16, color: Colors.white),
+                const SizedBox(width: 8),
+                Text(
+                  'Add to My List',
+                  style: GoogleFonts.roboto(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1721,3 +1678,5 @@ class _StatusDropdownState extends ConsumerState<_StatusDropdown> {
     );
   }
 }
+
+

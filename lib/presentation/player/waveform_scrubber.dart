@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 
 class WaveformScrubber extends StatelessWidget {
@@ -14,32 +15,51 @@ class WaveformScrubber extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final max = duration.inMilliseconds == 0 ? 1 : duration.inMilliseconds;
-    final value = position.inMilliseconds.clamp(0, max).toDouble();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Slider(
-          value: value,
-          max: max.toDouble(),
-          onChanged: (val) => onSeek(Duration(milliseconds: val.toInt())),
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(_format(position)),
-            Text(_format(duration)),
-          ],
-        ),
-      ],
-    );
-  }
+    final double progress = duration.inMilliseconds > 0
+        ? position.inMilliseconds / duration.inMilliseconds
+        : 0.0;
 
-  String _format(Duration duration) {
-    String two(int n) => n.toString().padLeft(2, '0');
-    final minutes = two(duration.inMinutes.remainder(60));
-    final seconds = two(duration.inSeconds.remainder(60));
-    final hours = duration.inHours;
-    return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
+    return GestureDetector(
+      onHorizontalDragUpdate: (details) {
+        final box = context.findRenderObject() as RenderBox;
+        final localPos = box.globalToLocal(details.globalPosition);
+        final relative = (localPos.dx / box.size.width).clamp(0.0, 1.0);
+        onSeek(Duration(milliseconds: (relative * duration.inMilliseconds).toInt()));
+      },
+      onTapDown: (details) {
+        final box = context.findRenderObject() as RenderBox;
+        final localPos = box.globalToLocal(details.globalPosition);
+        final relative = (localPos.dx / box.size.width).clamp(0.0, 1.0);
+        onSeek(Duration(milliseconds: (relative * duration.inMilliseconds).toInt()));
+      },
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final barCount = (constraints.maxWidth / 4).floor();
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: List.generate(barCount, (index) {
+              final barProgress = index / barCount;
+              final isActive = barProgress <= progress;
+              
+              // Seeded random height for "waveform" look
+              final random = Random(index * 31);
+              final heightFactor = 0.3 + random.nextDouble() * 0.7;
+              
+              return Container(
+                width: 2,
+                height: constraints.maxHeight * heightFactor,
+                decoration: BoxDecoration(
+                  color: isActive 
+                    ? const Color(0xFF115343) 
+                    : const Color(0xFF115343).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(1),
+                ),
+              );
+            }),
+          );
+        },
+      ),
+    );
   }
 }

@@ -10,6 +10,7 @@ class RecordingsState {
   RecordingsState({
     required this.items,
     required this.isLoading,
+    required this.hasMore,
     required this.page,
     required this.filters,
     this.errorMessage,
@@ -17,6 +18,7 @@ class RecordingsState {
 
   final List<Recording> items;
   final bool isLoading;
+  final bool hasMore;
   final int page;
   final RecordingFilters filters;
   final String? errorMessage;
@@ -24,6 +26,7 @@ class RecordingsState {
   RecordingsState copyWith({
     List<Recording>? items,
     bool? isLoading,
+    bool? hasMore,
     int? page,
     RecordingFilters? filters,
     String? errorMessage,
@@ -31,6 +34,7 @@ class RecordingsState {
     return RecordingsState(
       items: items ?? this.items,
       isLoading: isLoading ?? this.isLoading,
+      hasMore: hasMore ?? this.hasMore,
       page: page ?? this.page,
       filters: filters ?? this.filters,
       errorMessage: errorMessage,
@@ -40,8 +44,9 @@ class RecordingsState {
   factory RecordingsState.initial() => RecordingsState(
         items: const [],
         isLoading: false,
+        hasMore: true,
         page: 1,
-        filters: const RecordingFilters(tab: RecordingTab.myList),
+        filters: const RecordingFilters(tab: RecordingTab.all),
       );
 }
 
@@ -56,6 +61,7 @@ class RecordingsController extends StateNotifier<RecordingsState> {
     state = RecordingsState(
       items: const [], // Clear all items
       isLoading: true,
+      hasMore: true,
       page: 1,
       filters: state.filters,
       errorMessage: null,
@@ -65,7 +71,7 @@ class RecordingsController extends StateNotifier<RecordingsState> {
   }
 
   Future<void> loadMore() async {
-    if (state.isLoading) return;
+    if (state.isLoading || !state.hasMore) return;
     await _load(page: state.page + 1, replace: false);
   }
 
@@ -107,7 +113,7 @@ class RecordingsController extends StateNotifier<RecordingsState> {
       );
     }
 
-    state = state.copyWith(filters: normalized, page: 1, items: []);
+    state = state.copyWith(filters: normalized, page: 1, items: [], hasMore: true);
     await loadInitial();
   }
 
@@ -125,8 +131,12 @@ class RecordingsController extends StateNotifier<RecordingsState> {
         filters: state.filters,
         userId: userId,
       );
+      
+      final hasMore = items.length >= _pageSize;
+      
       state = state.copyWith(
         isLoading: false,
+        hasMore: hasMore,
         page: page,
         items: replace ? items : [...state.items, ...items],
       );

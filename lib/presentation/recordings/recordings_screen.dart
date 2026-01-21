@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -15,6 +16,7 @@ import '../auth/auth_controller.dart';
 import '../player/mini_player_bar.dart';
 import 'recordings_controller.dart';
 import '../../services/update_manager.dart';
+import '../widgets/collapsible_sidebar.dart';
 
 class RecordingsScreen extends ConsumerStatefulWidget {
   const RecordingsScreen({super.key});
@@ -76,234 +78,97 @@ class _RecordingsScreenState extends ConsumerState<RecordingsScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF0F4F3),
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(80),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                const Color(0xFF115343).withOpacity(0.95),
-                const Color(0xFF3F7166).withOpacity(0.95),
-              ],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                children: [
-                  // Logo
-                  Container(
-                    width: 48,
-                    height: 48,
-                    margin: const EdgeInsets.only(right: 16),
-                    child: Image.asset(
-                      'assets/images/testimony.png',
-                      fit: BoxFit.contain,
-                      filterQuality: FilterQuality.high,
-                    ),
-                  ),
-
-                  // Title with version
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Recordings',
-                        style: GoogleFonts.roboto(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      Text(
-                        'v${UpdateManager.appDisplayVersion ?? '2.1.7'}',
-                        style: GoogleFonts.roboto(
-                          color: Colors.white.withOpacity(0.7),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const Spacer(),
-
-                  // Action buttons
-                  StreamBuilder<bool>(
-                    stream: UpdateManager.updateAvailableStream,
-                    initialData: UpdateManager.isUpdateAvailable,
-                    builder: (context, snapshot) {
-                      final hasUpdate = snapshot.data ?? false;
-                      return Badge(
-                        isLabelVisible: hasUpdate,
-                        backgroundColor: Colors.red,
-                        offset: const Offset(8, -8),
-                        child: IconButton(
-                          icon: const Icon(Icons.system_update, color: Colors.white),
-                          tooltip: hasUpdate 
-                              ? 'New update available! Click to view'
-                              : 'System Status & Updates',
-                          onPressed: () {
-                            context.go('/system');
-                          },
-                        ),
-                      );
-                    },
-                  ),
-
-                  IconButton(
-                    onPressed: () => controller.loadInitial(),
-                    icon: const Icon(Icons.refresh, color: Colors.white),
-                    tooltip: 'Refresh',
-                  ),
-
-                  IconButton(
-                    onPressed: () => ref.read(authControllerProvider).logout(),
-                    icon: const Icon(Icons.logout, color: Colors.white),
-                    tooltip: 'Logout',
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-      bottomNavigationBar: const MiniPlayerBar(),
+      // bottomNavigationBar: const MiniPlayerBar(),
       body: Container(
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              const Color(0xFFF0F4F3),
-              const Color(0xFFF0F4F3).withOpacity(0.8),
-            ],
-          ),
+          color: const Color(0xFFF5F7FA), // Light theme background
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Court Filter Sidebar
-            Container(
-              width: 280,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border(
-                  right: BorderSide(
-                    color: Colors.grey.withOpacity(0.2),
-                    width: 1,
-                  ),
+            // 1. Floating Sidebar
+            // 1. Floating Sidebar
+            CollapsibleSidebar(
+              initiallyCollapsed: false,
+              selectedCourt: state.filters.court,
+              selectedCourtroom: state.filters.courtroom,
+              onCourtSelected: (court) => controller.updateFilters(
+                RecordingFilters(
+                  court: court,
+                  courtroom: null,
+                  query: state.filters.query,
+                  fromDate: state.filters.fromDate,
+                  toDate: state.filters.toDate,
+                  tab: state.filters.tab,
                 ),
               ),
-              child: _CourtFilterSidebar(
-                selectedCourt: state.filters.court,
-                selectedCourtroom: state.filters.courtroom,
-                onCourtSelected: (court) => controller.updateFilters(
-                  RecordingFilters(
-                    court: court,
-                    courtroom: null, // Clear courtroom when changing court
-                    query: state.filters.query,
-                    fromDate: state.filters.fromDate,
-                    toDate: state.filters.toDate,
-                    tab: state.filters.tab,
-                  ),
-                ),
-                onCourtroomSelected: (courtroom) => controller.updateFilters(
-                  RecordingFilters(
-                    court: state.filters.court,
-                    courtroom: courtroom,
-                    query: state.filters.query,
-                    fromDate: state.filters.fromDate,
-                    toDate: state.filters.toDate,
-                    tab: state.filters.tab,
-                  ),
+              onCourtroomSelected: (courtroom) => controller.updateFilters(
+                RecordingFilters(
+                  court: state.filters.court,
+                  courtroom: courtroom,
+                  query: state.filters.query,
+                  fromDate: state.filters.fromDate,
+                  toDate: state.filters.toDate,
+                  tab: state.filters.tab,
                 ),
               ),
             ),
 
             // Main Content
+            // Main Content
             Expanded(
-              child: Column(
-                children: [
-                  _FiltersBar(
-                    filters: state.filters,
-                    onFiltersChanged: controller.updateFilters,
-                  ),
-                  if (auth.isAuthenticated)
-                    _TabsBar(
-                      selected: state.filters.tab,
-                      onChanged: (tab) => controller.updateFilters(
-                        RecordingFilters(
-                          court: state.filters.court,
-                          courtroom: state.filters.courtroom,
-                          query: state.filters.query,
-                          fromDate: state.filters.fromDate,
-                          toDate: state.filters.toDate,
-                          tab: tab,
-                        ),
-                      ),
+              child: Padding(
+                padding: const EdgeInsets.only(top: 24, right: 24, bottom: 24),
+                child: Column(
+                  children: [
+                    _SearchHeader(
+                      filters: state.filters,
+                      onFiltersChanged: controller.updateFilters,
                     ),
-                  Expanded(
-                    child: state.isLoading && state.items.isEmpty
-                        ? const Center(
-                            child: CircularProgressIndicator(
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                Color(0xFF115343),
-                              ),
-                            ),
-                          )
-                        : RefreshIndicator(
-                            color: const Color(0xFF115343),
-                            onRefresh: controller.loadInitial,
-                            child: ListView.builder(
-                              itemCount: state.items.length + 1,
-                              itemBuilder: (context, index) {
-                                if (index >= state.items.length) {
-                                  return Container(
-                                    padding: const EdgeInsets.all(16),
-                                    child: TextButton(
-                                      onPressed: state.isLoading ? null : () => controller.loadMore(),
-                                      style: TextButton.styleFrom(
-                                        foregroundColor: const Color(0xFF115343),
-                                      ),
-                                      child: state.isLoading
-                                          ? const CircularProgressIndicator(
-                                              valueColor: AlwaysStoppedAnimation<Color>(
-                                                Color(0xFF115343),
-                                              ),
-                                            )
-                                          : Text(
-                                              'Load more',
-                                              style: GoogleFonts.roboto(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                            ),
-                                    ),
-                                  );
-                                }
-                                final recording = state.items[index];
-                                return _RecordingTile(
-                                  recording: recording,
-                                  isMyList: state.filters.tab ==
-                                      RecordingTab.myList,
-                                  canAssign: _canAssign(auth.user?.role),
-                                );
-                              },
+                    if (auth.isAuthenticated)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 24),
+                        child: _TabsBar(
+                          selected: state.filters.tab,
+                          onChanged: (tab) => controller.updateFilters(
+                            RecordingFilters(
+                              court: state.filters.court,
+                              courtroom: state.filters.courtroom,
+                              query: state.filters.query,
+                              fromDate: state.filters.fromDate,
+                              toDate: state.filters.toDate,
+                              tab: tab,
                             ),
                           ),
-                  ),
-                ],
+                        ),
+                      ),
+                    Expanded(
+                      child: state.isLoading && state.items.isEmpty
+                          ? const Center(
+                              child: CircularProgressIndicator(
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Color(0xFF115343),
+                                ),
+                              ),
+                            )
+                          : Column(
+                              children: [
+                                const _ListHeader(),
+                                Expanded(
+                                  child: _RecordingsList(
+                                    items: state.items,
+                                    isLoading: state.isLoading,
+                                    onLoadMore: controller.loadMore,
+                                    isMyList: state.filters.tab == RecordingTab.myList,
+                                    canAssign: _canAssign(auth.user?.role),
+                                    hasMore: state.hasMore,
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -465,165 +330,155 @@ class _RecordingTileState extends ConsumerState<_RecordingTile> {
         _MetaChip(icon: Icons.gavel, label: widget.recording.judgeName),
       );
     }
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-        border: Border.all(
-          color: Colors.white.withOpacity(0.8),
-          width: 1,
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Text(
-                    '${widget.recording.caseNumber} • ${widget.recording.title}',
-                    style: GoogleFonts.roboto(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
-                      color: const Color(0xFF115343),
-                    ),
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: _getStatusColor(status).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: _getStatusColor(status).withOpacity(0.3),
-                      width: 1,
-                    ),
-                  ),
-                  child: Text(
-                    status.toUpperCase(),
-                    style: GoogleFonts.roboto(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: _getStatusColor(status),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 12,
-              runSpacing: 4,
-              children: metaChips,
-            ),
-            if (widget.isMyList) ...[
-              const SizedBox(height: 10),
-              _AssignedUsersRow(recordingId: widget.recording.id),
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: Hero(
+        tag: widget.recording.id,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF115343).withOpacity(0.08),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
+              ),
             ],
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                if (!widget.isMyList)
-                  OutlinedButton.icon(
-                    onPressed: _isOperationInProgress ? null : _handleAddToMyList,
-                    icon: _isOperationInProgress
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.playlist_add, size: 18),
-                    label: Text(
-                      _isOperationInProgress ? 'Adding...' : 'Add to My List',
-                      style: GoogleFonts.roboto(fontWeight: FontWeight.w500),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF2E7D32),
-                      side: const BorderSide(color: Color(0xFF2E7D32)),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  ),
-                if (widget.isMyList)
-                  OutlinedButton.icon(
-                    onPressed: _isOperationInProgress ? null : _handleRemoveFromMyList,
-                    icon: _isOperationInProgress
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.remove_circle_outline, size: 18),
-                    label: Text(
-                      _isOperationInProgress ? 'Removing...' : 'Remove from My List',
-                      style: GoogleFonts.roboto(fontWeight: FontWeight.w500),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFFD32F2F),
-                      side: const BorderSide(color: Color(0xFFD32F2F)),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  ),
-                const SizedBox(width: 10),
-                if (widget.canAssign)
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      await showDialog(
-                        context: context,
-                        builder: (context) => _AssignToDialog(
-                          recordingId: widget.recording.id,
-                          recordingTitle: widget.recording.title,
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.person_add, size: 18),
-                    label: Text(
-                      'Assign To',
-                      style: GoogleFonts.roboto(fontWeight: FontWeight.w500),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF1E88E5),
-                      side: const BorderSide(color: Color(0xFF1E88E5)),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  ),
-                const Spacer(),
-                IconButton(
-                  onPressed: () => context.go('/recordings/${widget.recording.id}'),
-                  tooltip: 'Open',
-                  icon: const Icon(Icons.open_in_new, color: Color(0xFF115343)),
-                ),
-              ],
+            border: Border.all(
+              color: const Color(0xFF115343).withOpacity(0.08),
+              width: 1,
             ),
-          ],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(16),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => context.go('/recordings/${widget.recording.id}'),
+              hoverColor: const Color(0xFF115343).withOpacity(0.02),
+              splashColor: const Color(0xFF115343).withOpacity(0.05),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${widget.recording.caseNumber} • ${widget.recording.title}',
+                            style: GoogleFonts.roboto(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 17,
+                              color: const Color(0xFF115343),
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                _getStatusColor(status),
+                                _getStatusColor(status).withOpacity(0.85),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: _getStatusColor(status).withOpacity(0.3),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Text(
+                            status.toUpperCase(),
+                            style: GoogleFonts.roboto(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: metaChips,
+                    ),
+                    if (widget.isMyList) ...[
+                      const SizedBox(height: 12),
+                      _AssignedUsersRow(recordingId: widget.recording.id),
+                    ],
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        if (!widget.isMyList)
+                          _ModernButton(
+                            icon: Icons.playlist_add,
+                            label: _isOperationInProgress ? 'Adding...' : 'Add to My List',
+                            color: const Color(0xFF2E7D32),
+                            isLoading: _isOperationInProgress,
+                            onPressed: _isOperationInProgress ? null : _handleAddToMyList,
+                          ),
+                        if (widget.isMyList)
+                          _ModernButton(
+                            icon: Icons.remove_circle_outline,
+                            label: _isOperationInProgress ? 'Removing...' : 'Remove from My List',
+                            color: const Color(0xFFD32F2F),
+                            isLoading: _isOperationInProgress,
+                            onPressed: _isOperationInProgress ? null : _handleRemoveFromMyList,
+                          ),
+                        const SizedBox(width: 10),
+                        if (widget.canAssign)
+                          _ModernButton(
+                            icon: Icons.person_add,
+                            label: 'Assign To',
+                            color: const Color(0xFF1E88E5),
+                            onPressed: () async {
+                              await showDialog(
+                                context: context,
+                                builder: (context) => _AssignToDialog(
+                                  recordingId: widget.recording.id,
+                                  recordingTitle: widget.recording.title,
+                                ),
+                              );
+                            },
+                          ),
+                        const Spacer(),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF115343).withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: IconButton(
+                            onPressed: () => context.go('/recordings/${widget.recording.id}'),
+                            tooltip: 'Open',
+                            icon: const Icon(Icons.arrow_forward_rounded, color: Color(0xFF115343)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -639,18 +494,23 @@ class _MetaChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFF115343).withOpacity(0.06),
-        borderRadius: BorderRadius.circular(12),
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFF115343).withOpacity(0.08),
+            const Color(0xFF115343).withOpacity(0.04),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: const Color(0xFF115343).withOpacity(0.12),
+          color: const Color(0xFF115343).withOpacity(0.15),
         ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: const Color(0xFF115343)),
+          Icon(icon, size: 13, color: const Color(0xFF115343).withOpacity(0.7)),
           const SizedBox(width: 6),
           Text(
             label,
@@ -661,6 +521,79 @@ class _MetaChip extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Modern filled button with gradient and shadow
+class _ModernButton extends StatelessWidget {
+  const _ModernButton({
+    required this.icon,
+    required this.label,
+    required this.color,
+    this.onPressed,
+    this.isLoading = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback? onPressed;
+  final bool isLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                color,
+                color.withOpacity(0.85),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: color.withOpacity(0.25),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isLoading)
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              else
+                Icon(icon, size: 16, color: Colors.white),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: GoogleFonts.roboto(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -838,6 +771,9 @@ class _AssignToDialogState extends ConsumerState<_AssignToDialog> {
   Widget build(BuildContext context) {
     final query = _searchController.text.trim().toLowerCase();
     final assignedUserIds = _assigned.map((e) => e.userId).toSet();
+    final currentUser = ref.watch(authSessionProvider).user;
+    final isMeAssigned = currentUser != null && assignedUserIds.contains(currentUser.id);
+
     final filteredUsers = _users.where((user) {
       if (assignedUserIds.contains(user.id)) return false;
       if (query.isEmpty) return true;
@@ -869,7 +805,33 @@ class _AssignToDialogState extends ConsumerState<_AssignToDialog> {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
+              
+              if (!isMeAssigned && currentUser != null) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () => _assignUser(currentUser),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF115343),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    icon: const Icon(Icons.add_task),
+                    label: Text(
+                      'Assign to Me',
+                      style: GoogleFonts.roboto(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 16),
+              ],
+
               TextField(
                 controller: _searchController,
                 decoration: InputDecoration(
@@ -1002,59 +964,83 @@ class _TabsBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: SegmentedButton<RecordingTab>(
-        style: SegmentedButton.styleFrom(
-          backgroundColor: Colors.white,
-          foregroundColor: const Color(0xFF115343),
-          selectedBackgroundColor: const Color(0xFF115343).withOpacity(0.1),
-          selectedForegroundColor: const Color(0xFF115343),
-          side: BorderSide(
-            color: const Color(0xFF115343).withOpacity(0.3),
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        width: 250,
+        margin: const EdgeInsets.only(left: 0, top: 8, bottom: 24),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFF115343).withOpacity(0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: const Color(0xFF115343).withOpacity(0.1),
           ),
         ),
-        segments: [
-          ButtonSegment(
-            value: RecordingTab.all,
-            label: Text(
-              'All Recordings',
-              style: GoogleFonts.roboto(
-                fontWeight: FontWeight.w500,
-              ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<RecordingTab>(
+            value: selected,
+            icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF115343)),
+            isExpanded: true,
+            style: GoogleFonts.roboto(
+              color: const Color(0xFF115343),
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
             ),
-          ),
-          ButtonSegment(
-            value: RecordingTab.myList,
-            label: Text(
-              'My List',
-              style: GoogleFonts.roboto(
-                fontWeight: FontWeight.w500,
+            dropdownColor: const Color(0xFFF5F7FA), // Light grey-blue match
+            borderRadius: BorderRadius.circular(12),
+            items: [
+              DropdownMenuItem(
+                value: RecordingTab.all,
+                child: Row(
+                  children: [
+                    Icon(Icons.dashboard_rounded, 
+                      size: 20, 
+                      color: selected == RecordingTab.all ? const Color(0xFF115343) : Colors.grey[600],
+                    ),
+                    const SizedBox(width: 12),
+                    const Text('All Recordings'),
+                  ],
+                ),
               ),
-            ),
+              DropdownMenuItem(
+                value: RecordingTab.myList,
+                child: Row(
+                  children: [
+                    Icon(Icons.bookmark_rounded, 
+                      size: 20, 
+                      color: selected == RecordingTab.myList ? const Color(0xFF115343) : Colors.grey[600],
+                    ),
+                    const SizedBox(width: 12),
+                    const Text('My List'),
+                  ],
+                ),
+              ),
+            ],
+            onChanged: (value) {
+              if (value != null) onChanged(value);
+            },
           ),
-        ],
-        selected: {selected},
-        onSelectionChanged: (value) => onChanged(value.first),
+        ),
       ),
     );
   }
 }
 
-class _FiltersBar extends StatefulWidget {
-  const _FiltersBar({required this.filters, required this.onFiltersChanged});
+class _SearchHeader extends StatefulWidget {
+  const _SearchHeader({
+    required this.filters,
+    required this.onFiltersChanged,
+  });
 
   final RecordingFilters filters;
   final ValueChanged<RecordingFilters> onFiltersChanged;
 
   @override
-  State<_FiltersBar> createState() => _FiltersBarState();
+  State<_SearchHeader> createState() => _SearchHeaderState();
 }
 
-class _FiltersBarState extends State<_FiltersBar> {
+class _SearchHeaderState extends State<_SearchHeader> {
   late final TextEditingController _searchController;
 
   @override
@@ -1070,9 +1056,10 @@ class _FiltersBarState extends State<_FiltersBar> {
   }
 
   @override
-  void didUpdateWidget(covariant _FiltersBar oldWidget) {
+  void didUpdateWidget(_SearchHeader oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.filters.query != widget.filters.query) {
+    if (widget.filters.query != oldWidget.filters.query &&
+        widget.filters.query != _searchController.text) {
       _searchController.text = widget.filters.query ?? '';
     }
   }
@@ -1080,153 +1067,63 @@ class _FiltersBarState extends State<_FiltersBar> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.all(12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      margin: const EdgeInsets.only(bottom: 24),
       child: Row(
         children: [
+          // Centered Search Bar
           Expanded(
-            child: TextField(
-              controller: _searchController,
-              style: GoogleFonts.roboto(
-                color: const Color(0xFF115343),
-              ),
-              decoration: InputDecoration(
-                labelText: 'Search case number or title',
-                labelStyle: GoogleFonts.roboto(
-                  color: Colors.grey[600],
-                ),
-                prefixIcon: Icon(
-                  Icons.search,
-                  color: const Color(0xFF115343).withOpacity(0.6),
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                    color: const Color(0xFF115343).withOpacity(0.3),
+            child: Center(
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 600),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF115343).withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: const Color(0xFF115343).withOpacity(0.1),
                   ),
                 ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                    color: const Color(0xFF115343).withOpacity(0.3),
+                child: TextField(
+                  controller: _searchController,
+                  textAlign: TextAlign.start,
+                  style: GoogleFonts.roboto(
+                    color: const Color(0xFF115343),
+                    fontSize: 16,
                   ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(
-                    color: Color(0xFF115343),
-                    width: 2,
+                  decoration: InputDecoration(
+                    hintText: 'Search case number, title, or judge...',
+                    hintStyle: GoogleFonts.roboto(
+                      color: const Color(0xFF115343).withOpacity(0.4),
+                    ),
+                    prefixIcon: Icon(
+                      Icons.search,
+                      color: const Color(0xFF115343).withOpacity(0.6),
+                    ),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 16,
+                    ),
                   ),
-                ),
-                filled: true,
-                fillColor: const Color(0xFF115343).withOpacity(0.02),
-              ),
-              onSubmitted: (value) => widget.onFiltersChanged(
-                RecordingFilters(
-                  court: widget.filters.court,
-                  courtroom: widget.filters.courtroom,
-                  query: value,
-                  fromDate: widget.filters.fromDate,
-                  toDate: widget.filters.toDate,
-                  tab: widget.filters.tab,
+                  onSubmitted: (value) => widget.onFiltersChanged(
+                    RecordingFilters(
+                      court: widget.filters.court,
+                      courtroom: widget.filters.courtroom,
+                      query: value,
+                      fromDate: widget.filters.fromDate,
+                      toDate: widget.filters.toDate,
+                      tab: widget.filters.tab,
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          OutlinedButton.icon(
-            icon: const Icon(Icons.search),
-            label: Text(
-              'Search',
-              style: GoogleFonts.roboto(
-                color: const Color(0xFF115343),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(
-                color: const Color(0xFF115343).withOpacity(0.3),
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            ),
-            onPressed: () => widget.onFiltersChanged(
-              RecordingFilters(
-                court: widget.filters.court,
-                courtroom: widget.filters.courtroom,
-                query: _searchController.text.trim(),
-                fromDate: widget.filters.fromDate,
-                toDate: widget.filters.toDate,
-                tab: widget.filters.tab,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          OutlinedButton.icon(
-            icon: const Icon(Icons.clear),
-            label: Text(
-              'Clear',
-              style: GoogleFonts.roboto(
-                color: Colors.grey[700],
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(color: Colors.grey.withOpacity(0.4)),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            ),
-            onPressed: () {
-              _searchController.clear();
-              widget.onFiltersChanged(
-                RecordingFilters(
-                  court: widget.filters.court,
-                  courtroom: widget.filters.courtroom,
-                  query: null,
-                  fromDate: widget.filters.fromDate,
-                  toDate: widget.filters.toDate,
-                  tab: widget.filters.tab,
-                ),
-              );
-            },
-          ),
-          const SizedBox(width: 12),
-          OutlinedButton.icon(
-            icon: Icon(
-              Icons.filter_alt,
-              color: const Color(0xFF115343),
-            ),
-            label: Text(
-              'Filters',
-              style: GoogleFonts.roboto(
-                color: const Color(0xFF115343),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(
-                color: const Color(0xFF115343).withOpacity(0.3),
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            ),
+
+          // Right Side Actions
+          const SizedBox(width: 24),
+          _ActionButton(
+            icon: Icons.filter_list_rounded,
+            tooltip: 'Filter by Date',
             onPressed: () async {
               final result = await showDialog<RecordingFilters>(
                 context: context,
@@ -1237,11 +1134,732 @@ class _FiltersBarState extends State<_FiltersBar> {
               }
             },
           ),
+          const SizedBox(width: 12),
+          // User Updates
+          const _UpdateBadge(),
+          const SizedBox(width: 12),
+          Consumer(
+            builder: (context, ref, _) => _ActionButton(
+              icon: Icons.logout_rounded,
+              tooltip: 'Logout',
+              onPressed: () => ref.read(authControllerProvider).logout(),
+              color: Colors.red.withOpacity(0.1),
+              iconColor: Colors.red,
+            ),
+          ),
         ],
       ),
     );
   }
 }
+
+class _ActionButton extends StatelessWidget {
+  const _ActionButton({
+    required this.icon,
+    this.onPressed,
+    this.tooltip,
+    this.color,
+    this.iconColor,
+  });
+
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final String? tooltip;
+  final Color? color;
+  final Color? iconColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip ?? '',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color ?? const Color(0xFF115343).withOpacity(0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: (iconColor ?? const Color(0xFF115343)).withOpacity(0.1),
+              ),
+            ),
+            child: Icon(
+              icon,
+              size: 20,
+              color: iconColor ?? const Color(0xFF115343),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UpdateBadge extends StatelessWidget {
+  const _UpdateBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<bool>(
+      stream: UpdateManager.updateAvailableStream,
+      initialData: UpdateManager.isUpdateAvailable,
+      builder: (context, snapshot) {
+        final hasUpdate = snapshot.data ?? false;
+        if (!hasUpdate) return const SizedBox.shrink();
+        
+        return _ActionButton(
+          icon: Icons.system_update,
+          tooltip: 'New update available',
+          color: Colors.red.withOpacity(0.1),
+          iconColor: Colors.red,
+          onPressed: () => context.go('/system'),
+        );
+      },
+    );
+  }
+}
+
+class _ListHeader extends StatelessWidget {
+  const _ListHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Colors.grey.withOpacity(0.2)),
+        ),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 40,
+            child: Text(
+              '#',
+              style: GoogleFonts.roboto(
+                color: Colors.grey[600],
+                fontSize: 14,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            flex: 3,
+            child: Text(
+              'RECORDING',
+              style: GoogleFonts.roboto(
+                color: Colors.grey[600],
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 1,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            flex: 3,
+            child: Text(
+              'ASSIGNED TO',
+              style: GoogleFonts.roboto(
+                color: Colors.grey[600],
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 1,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            flex: 2,
+            child: Text(
+              'COURT / JUDGE',
+              style: GoogleFonts.roboto(
+                color: Colors.grey[600],
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 1,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          SizedBox(
+            width: 110,
+            child: Text(
+              'STATUS',
+              style: GoogleFonts.roboto(
+                color: Colors.grey[600],
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 1,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            flex: 2,
+            child: Text(
+              'DATE',
+              style: GoogleFonts.roboto(
+                color: Colors.grey[600],
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 1,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          SizedBox(
+            width: 60,
+            child: Icon(
+              Icons.access_time,
+              size: 16,
+              color: Colors.grey[600],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RecordingsList extends StatelessWidget {
+  const _RecordingsList({
+    required this.items,
+    required this.isLoading,
+    required this.onLoadMore,
+    required this.isMyList,
+    required this.canAssign,
+    required this.hasMore,
+  });
+
+  final List<Recording> items;
+  final bool isLoading;
+  final VoidCallback onLoadMore;
+  final bool isMyList;
+  final bool canAssign;
+  final bool hasMore;
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty && !isLoading) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.folder_open_rounded, size: 64, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            Text(
+              'No recordings found',
+              style: GoogleFonts.roboto(
+                fontSize: 18,
+                color: Colors.grey[600],
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 24),
+      itemCount: items.length + (hasMore ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index >= items.length) {
+          // Load More at end of list
+          return Center(
+            child: _LoadMoreButton(
+              onPressed: onLoadMore,
+              isLoading: isLoading,
+            ),
+          );
+        }
+        return _RecordingRow(
+          index: index + 1,
+          recording: items[index],
+          isMyList: isMyList,
+          canAssign: canAssign,
+        );
+      },
+    );
+  }
+}
+
+class _LoadMoreButton extends StatefulWidget {
+  const _LoadMoreButton({
+    required this.onPressed,
+    this.isLoading = false,
+  });
+
+  final VoidCallback onPressed;
+  final bool isLoading;
+
+  @override
+  State<_LoadMoreButton> createState() => _LoadMoreButtonState();
+}
+
+class _LoadMoreButtonState extends State<_LoadMoreButton> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 32),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: widget.isLoading ? null : widget.onPressed,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+            decoration: BoxDecoration(
+              color: _isHovered ? const Color(0xFF115343) : Colors.transparent,
+              borderRadius: BorderRadius.circular(30),
+              border: Border.all(
+                color: const Color(0xFF115343),
+                width: 2,
+              ),
+              boxShadow: _isHovered
+                  ? [
+                      BoxShadow(
+                        color: const Color(0xFF115343).withOpacity(0.3),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      )
+                    ]
+                  : [],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (widget.isLoading)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: _isHovered ? Colors.white : const Color(0xFF115343),
+                      ),
+                    ),
+                  ),
+                Text(
+                  widget.isLoading ? 'Loading...' : 'Load More Recordings',
+                  style: GoogleFonts.roboto(
+                    color: _isHovered ? Colors.white : const Color(0xFF115343),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RecordingRow extends ConsumerStatefulWidget {
+  const _RecordingRow({
+    required this.index,
+    required this.recording,
+    required this.isMyList,
+    required this.canAssign,
+  });
+
+  final int index;
+  final Recording recording;
+  final bool isMyList;
+  final bool canAssign;
+
+  @override
+  ConsumerState<_RecordingRow> createState() => _RecordingRowState();
+}
+
+class _RecordingRowState extends ConsumerState<_RecordingRow> {
+  bool _isHovered = false;
+  bool _isOperationInProgress = false;
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return const Color(0xFFFF9800); // Orange
+      case 'in_progress':
+        return const Color(0xFF2196F3); // Blue
+      case 'completed':
+        return const Color(0xFF4CAF50); // Green
+      case 'reviewed':
+        return const Color(0xFF9C27B0); // Purple
+      default:
+        return const Color(0xFF757575); // Grey
+    }
+  }
+
+  String _formatDuration(double? seconds) {
+    if (seconds == null) return '0:00';
+    final totalSeconds = seconds.floor();
+    if (totalSeconds <= 0) return '0:00';
+    final minutes = totalSeconds ~/ 60;
+    final remainingSeconds = totalSeconds % 60;
+    return '$minutes:${remainingSeconds.toString().padLeft(2, '0')}';
+  }
+
+
+  Future<void> _handleAddToMyList() async {
+    if (_isOperationInProgress) return;
+    final userId = ref.read(authSessionProvider).user?.id;
+    if (userId == null) return;
+    setState(() => _isOperationInProgress = true);
+    try {
+      await ref.read(assignmentRepositoryProvider).assignRecording(
+        widget.recording.id,
+        userId: userId,
+      );
+      ref.read(recordingsControllerProvider.notifier).loadInitial();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    } finally {
+      if (mounted) setState(() => _isOperationInProgress = false);
+    }
+  }
+
+  Future<void> _handleRemoveFromMyList() async {
+    if (_isOperationInProgress) return;
+    final userId = ref.read(authSessionProvider).user?.id;
+    if (userId == null) return;
+    setState(() => _isOperationInProgress = true);
+    try {
+      await ref.read(assignmentRepositoryProvider).unassignRecording(
+        widget.recording.id,
+        userId: userId,
+      );
+      ref.read(recordingsControllerProvider.notifier).loadInitial();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    } finally {
+      if (mounted) setState(() => _isOperationInProgress = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final date = DateFormat.yMMMd().format(widget.recording.date);
+    final duration = _formatDuration(widget.recording.durationSeconds);
+    final status = widget.recording.status.isEmpty ? 'pending' : widget.recording.status;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () => context.go('/recordings/${widget.recording.id}'),
+        child: Container(
+          decoration: BoxDecoration(
+            color: _isHovered ? const Color(0xFF115343).withOpacity(0.04) : Colors.transparent,
+            border: Border(
+              bottom: BorderSide(color: Colors.grey.withOpacity(0.1)),
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              // # ID
+              SizedBox(
+                width: 40,
+                child: Text(
+                  '${widget.index}',
+                  style: GoogleFonts.roboto(
+                    color: Colors.grey[600],
+                    fontSize: 13,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(width: 16),
+              
+              // TITLE
+              Expanded(
+                flex: 3,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      widget.recording.title,
+                      style: GoogleFonts.roboto(
+                        color: const Color(0xFF115343),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      widget.recording.caseNumber,
+                      style: GoogleFonts.roboto(
+                        color: Colors.grey[600],
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+
+              Expanded(
+                flex: 3,
+                child: _AssignmentCell(
+                  recording: widget.recording,
+                  isMyList: widget.isMyList,
+                  canAssign: widget.canAssign,
+                  onAddToMyList: _handleAddToMyList,
+                  onRemoveFromMyList: _handleRemoveFromMyList,
+                  isOperationInProgress: _isOperationInProgress,
+                ),
+              ),
+              const SizedBox(width: 16),
+
+              // COURT
+              Expanded(
+                flex: 2,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      widget.recording.court,
+                      style: GoogleFonts.roboto(
+                        color: Colors.grey[800],
+                        fontWeight: FontWeight.w500,
+                        fontSize: 13,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (widget.recording.judgeName.isNotEmpty)
+                      Text(
+                        widget.recording.judgeName,
+                        style: GoogleFonts.roboto(
+                          color: Colors.grey[600],
+                          fontSize: 12,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+
+              // STATUS
+              SizedBox(
+                width: 110,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _getStatusColor(status).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _getStatusColor(status).withOpacity(0.3),
+                    ),
+                  ),
+                  child: Text(
+                    status.toUpperCase(),
+                    style: GoogleFonts.roboto(
+                      color: _getStatusColor(status),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+
+              // DATE
+              Expanded(
+                flex: 2,
+                child: Text(
+                  date,
+                  style: GoogleFonts.roboto(
+                    color: Colors.grey[700],
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+
+              // DURATION
+              SizedBox(
+                width: 60,
+                child: Text(
+                  duration,
+                  style: GoogleFonts.roboto(
+                    color: Colors.grey[600],
+                    fontSize: 13,
+                    fontFeatures: [const FontFeature.tabularFigures()],
+                  ),
+                  textAlign: TextAlign.right,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AssignmentCell extends StatelessWidget {
+  const _AssignmentCell({
+    required this.recording,
+    required this.isMyList,
+    required this.canAssign,
+    required this.onAddToMyList,
+    required this.onRemoveFromMyList,
+    required this.isOperationInProgress,
+  });
+
+  final Recording recording;
+  final bool isMyList;
+  final bool canAssign;
+  final VoidCallback onAddToMyList;
+  final VoidCallback onRemoveFromMyList;
+  final bool isOperationInProgress;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Consumer(
+            builder: (context, ref, child) {
+              final currentUserId = ref.read(authSessionProvider).user?.id;
+              return FutureBuilder<List<AssignedUser>>(
+                future: ref.read(assignmentRepositoryProvider).getAssignedUsers(recording.id),
+                builder: (context, snapshot) {
+                  final assignments = snapshot.data ?? [];
+                  final isAssignedToMe = currentUserId != null && 
+                      assignments.any((a) => a.userId == currentUserId);
+
+                  if (assignments.isEmpty && !canAssign) {
+                    return Text('-', style: TextStyle(color: Colors.grey[400]));
+                  }
+                  
+                  if (assignments.isEmpty) {
+                    return Text(
+                      'Unassigned',
+                      style: GoogleFonts.roboto(
+                        color: Colors.grey[400],
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    );
+                  }
+
+                  return Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
+                    children: [
+                      ...assignments.map((a) {
+                        final name = a.name.isNotEmpty ? a.name : a.email.split('@').first;
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF115343).withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: const Color(0xFF115343).withOpacity(0.15),
+                            ),
+                          ),
+                          child: Text(
+                            name,
+                            style: GoogleFonts.roboto(
+                              color: const Color(0xFF115343),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        );
+                      }),
+                      // We use snapshot data to determine final button state
+                      if (isOperationInProgress)
+                        const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: Padding(
+                            padding: EdgeInsets.all(6),
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      else ...[
+                        if (isAssignedToMe)
+                           IconButton(
+                             icon: const Icon(Icons.remove_circle_outline, 
+                               size: 20, 
+                               color: Color(0xFFD32F2F),
+                             ),
+                             tooltip: 'Remove from My List',
+                             onPressed: onRemoveFromMyList,
+                             padding: EdgeInsets.zero,
+                             constraints: const BoxConstraints(),
+                           )
+                        else
+                           IconButton(
+                             icon: const Icon(Icons.add_circle_outline, 
+                               size: 20, 
+                               color: Color(0xFF2E7D32),
+                             ),
+                             tooltip: 'Add to My List',
+                             onPressed: onAddToMyList,
+                             padding: EdgeInsets.zero,
+                             constraints: const BoxConstraints(),
+                           ),
+                      ],
+                    ],
+                  );
+                },
+              );
+            },
+          ),
+        ),
+        if (!isOperationInProgress && canAssign) ...[
+          const SizedBox(width: 4),
+          IconButton(
+            icon: const Icon(Icons.person_add_outlined,
+              size: 20,
+              color: Color(0xFF1E88E5),
+            ),
+            tooltip: 'Assign To...',
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (context) => _AssignToDialog(
+                  recordingId: recording.id,
+                  recordingTitle: recording.title,
+                ),
+              );
+            },
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 
 class _FilterDialog extends StatefulWidget {
   const _FilterDialog({required this.filters});
@@ -1405,406 +2023,5 @@ class _DateField extends StatelessWidget {
   }
 }
 
-class _CourtFilterSidebar extends ConsumerStatefulWidget {
-  const _CourtFilterSidebar({
-    required this.selectedCourt,
-    required this.selectedCourtroom,
-    required this.onCourtSelected,
-    required this.onCourtroomSelected,
-  });
-
-  final String? selectedCourt;
-  final String? selectedCourtroom;
-  final ValueChanged<String?> onCourtSelected;
-  final ValueChanged<String?> onCourtroomSelected;
-
-  @override
-  ConsumerState<_CourtFilterSidebar> createState() =>
-      _CourtFilterSidebarState();
-}
-
-class _CourtFilterSidebarState extends ConsumerState<_CourtFilterSidebar> {
-  String? _selectedLetter;
-  bool _isExpanded = false;
-  bool _isLoading = true;
-  String? _errorMessage;
-  List<String> _courts = [];
-  Map<String, List<String>> _courtroomsByCourt = {};
-
-  @override
-  void initState() {
-    super.initState();
-    _loadCourtsAndRooms();
-  }
-
-  Future<void> _loadCourtsAndRooms() async {
-    if (!mounted) return;
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-    try {
-      final repo = ref.read(recordingRepositoryProvider);
-      final results = await Future.wait([
-        repo.fetchCourts(),
-        repo.fetchCourtroomsByCourt(),
-      ]);
-      _courts = (results[0] as List<String>)..sort();
-      _courtroomsByCourt = results[1] as Map<String, List<String>>;
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-        _errorMessage = mapDioError(error);
-      });
-    }
-  }
-
-  List<String> get _filteredCourts {
-    if (_selectedLetter == null) return [];
-    return _courts.where((court) =>
-        court.toUpperCase().startsWith(_selectedLetter!)).toList()
-      ..sort();
-  }
-
-  List<String> _getCourtrooms(String court) {
-    return _courtroomsByCourt[court] ?? [];
-  }
 
 
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        // Header
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                const Color(0xFF115343).withOpacity(0.1),
-                const Color(0xFF3F7166).withOpacity(0.1),
-              ],
-            ),
-            border: Border(
-              bottom: BorderSide(
-                color: Colors.grey.withOpacity(0.2),
-                width: 1,
-              ),
-            ),
-          ),
-          child: Row(
-            children: [
-              Text(
-                'Court Filter',
-                style: GoogleFonts.roboto(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF115343),
-                ),
-              ),
-              const Spacer(),
-              if (widget.selectedCourt != null)
-                IconButton(
-                  onPressed: () {
-                    widget.onCourtSelected(null);
-                    widget.onCourtroomSelected(null);
-                  },
-                  icon: Icon(
-                    Icons.clear,
-                    size: 20,
-                    color: Colors.grey[600],
-                  ),
-                  tooltip: 'Clear filter',
-                ),
-            ],
-          ),
-        ),
-
-        if (_isLoading)
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: CircularProgressIndicator(),
-          )
-        else if (_errorMessage != null)
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              'Failed to load courts',
-              style: GoogleFonts.roboto(color: Colors.redAccent),
-            ),
-          )
-        else
-          const SizedBox.shrink(),
-
-        // Fixed Alphabetical Index
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border(
-              bottom: BorderSide(
-                color: Colors.grey.withOpacity(0.2),
-                width: 1,
-              ),
-            ),
-          ),
-          child: Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 3,
-            runSpacing: 3,
-            children: List.generate(26, (index) {
-              final letter = String.fromCharCode(65 + index); // A-Z
-              final isSelected = _selectedLetter == letter;
-              final hasCourts = _courts.any((court) =>
-                  court.toUpperCase().startsWith(letter));
-
-              return InkWell(
-                onTap: hasCourts ? () {
-                  setState(() {
-                    _selectedLetter = isSelected ? null : letter;
-                  });
-                } : null,
-                child: Container(
-                  width: 26,
-                  height: 26,
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? const Color(0xFF115343)
-                        : hasCourts
-                            ? const Color(0xFF115343).withOpacity(0.1)
-                            : Colors.grey.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Center(
-                    child: Text(
-                      letter,
-                      style: GoogleFonts.roboto(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: isSelected
-                            ? Colors.white
-                            : hasCourts
-                                ? const Color(0xFF115343)
-                                : Colors.grey,
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            }),
-          ),
-        ),
-
-        // Court List with Expandable Courtrooms
-        if (!_isLoading && _errorMessage == null)
-          Expanded(
-            child: ListView.builder(
-              itemCount: _getListItemCount(),
-              itemBuilder: (context, index) {
-                return _buildListItem(context, index);
-              },
-            ),
-          )
-        else
-          const Spacer(),
-
-        // Footer with instruction
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            border: Border(
-              top: BorderSide(
-                color: Colors.grey.withOpacity(0.2),
-                width: 1,
-              ),
-            ),
-            color: Colors.grey.withOpacity(0.05),
-          ),
-          child: Text(
-            _selectedLetter != null
-                ? 'Click court to select courtroom'
-                : 'Select a letter to browse courts',
-            style: GoogleFonts.roboto(
-              fontSize: 11,
-              color: Colors.grey[600],
-              fontStyle: FontStyle.italic,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ),
-      ],
-    );
-  }
-
-  int _getListItemCount() {
-    if (_selectedLetter == null) return 0;
-
-    int count = _filteredCourts.length;
-    // Add courtroom items for the selected court if expanded
-    if (widget.selectedCourt != null && _isExpanded && _getCourtrooms(widget.selectedCourt!).isNotEmpty) {
-      count += 1 + _getCourtrooms(widget.selectedCourt!).length; // +1 for "All Courtrooms" option
-    }
-    return count;
-  }
-
-  Widget _buildListItem(BuildContext context, int index) {
-    final courts = _filteredCourts;
-    int currentIndex = 0;
-
-    // Find which section this index belongs to
-    for (int courtIndex = 0; courtIndex < courts.length; courtIndex++) {
-      final court = courts[courtIndex];
-      final isSelectedCourt = widget.selectedCourt == court;
-      final courtrooms = _getCourtrooms(court);
-
-      // Court item
-      if (currentIndex == index) {
-        return _buildCourtItem(court, isSelectedCourt, courtrooms.isNotEmpty);
-      }
-      currentIndex++;
-
-      // Courtroom items (if this court is selected and expanded)
-      if (isSelectedCourt && _isExpanded && courtrooms.isNotEmpty) {
-        // "All Courtrooms" option
-        if (currentIndex == index) {
-          return _buildCourtroomItem('All Courtrooms', widget.selectedCourtroom == null, true);
-        }
-        currentIndex++;
-
-        // Individual courtrooms
-        for (int roomIndex = 0; roomIndex < courtrooms.length; roomIndex++) {
-          if (currentIndex == index) {
-            final courtroom = courtrooms[roomIndex];
-            final isLastRoom = roomIndex == courtrooms.length - 1;
-            return _buildCourtroomItem(courtroom, widget.selectedCourtroom == courtroom, false, isLastRoom);
-          }
-          currentIndex++;
-        }
-      }
-    }
-
-    return const SizedBox.shrink();
-  }
-
-  Widget _buildCourtItem(String court, bool isSelected, bool hasCourtrooms) {
-    return InkWell(
-      onTap: () {
-        if (isSelected) {
-          setState(() => _isExpanded = !_isExpanded);
-        } else {
-          widget.onCourtSelected(court);
-          if (hasCourtrooms) {
-            setState(() => _isExpanded = true);
-          }
-        }
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? const Color(0xFF115343).withOpacity(0.08)
-              : null,
-          border: Border(
-            bottom: BorderSide(
-              color: Colors.grey.withOpacity(0.1),
-              width: 1,
-            ),
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.account_balance,
-              size: 18,
-              color: isSelected
-                  ? const Color(0xFF115343)
-                  : Colors.grey[600],
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                court,
-                style: GoogleFonts.roboto(
-                  fontSize: 14,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                  color: isSelected
-                      ? const Color(0xFF115343)
-                      : Colors.grey[800],
-                ),
-              ),
-            ),
-            if (hasCourtrooms)
-              Icon(
-                isSelected
-                    ? (_isExpanded ? Icons.expand_less : Icons.expand_more)
-                    : Icons.chevron_right,
-                size: 18,
-                color: const Color(0xFF115343).withOpacity(0.6),
-              ),
-            if (isSelected && !hasCourtrooms)
-              Icon(
-                Icons.check,
-                size: 18,
-                color: const Color(0xFF115343),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCourtroomItem(String label, bool isSelected, bool isAllOption, [bool isLast = false]) {
-    return InkWell(
-      onTap: () => widget.onCourtroomSelected(isAllOption ? null : label),
-      child: Container(
-        padding: const EdgeInsets.only(left: 44, right: 16, top: 10, bottom: 10),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? const Color(0xFF115343).withOpacity(0.06)
-              : null,
-          border: Border(
-            bottom: BorderSide(
-              color: Colors.grey.withOpacity(0.08),
-              width: isLast ? 1 : 0.5,
-            ),
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.meeting_room,
-              size: 16,
-              color: isSelected
-                  ? const Color(0xFF115343)
-                  : Colors.grey[500],
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                label,
-                style: GoogleFonts.roboto(
-                  fontSize: 13,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                  color: isSelected
-                      ? const Color(0xFF115343)
-                      : Colors.grey[700],
-                ),
-              ),
-            ),
-            if (isSelected)
-              Icon(
-                Icons.check,
-                size: 16,
-                color: const Color(0xFF115343),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}

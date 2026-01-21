@@ -21,21 +21,27 @@ class TranscriptRepositoryImpl implements TranscriptRepository {
       // Fall back to legacy transcript endpoint
     }
 
-    final response = await _client.dio.get<dynamic>(
-      '/case_recordings/$recordingId/transcript',
-    );
-    final data = response.data;
-    if (data == null) return '';
-    if (data is String) return data;
-    if (data is Map<String, dynamic>) {
-      final direct = _readTranscriptFromMap(data);
-      if (direct != null) return direct;
-      final nested = data['data'];
-      if (nested is String) return nested;
-      if (nested is Map<String, dynamic>) {
-        final nestedValue = _readTranscriptFromMap(nested);
-        if (nestedValue != null) return nestedValue;
+    try {
+      final response = await _client.dio.get<dynamic>(
+        '/case_recordings/$recordingId/transcript',
+      );
+      final data = response.data;
+      if (data == null) return '';
+      if (data is String) return data;
+      if (data is Map<String, dynamic>) {
+        final direct = _readTranscriptFromMap(data);
+        if (direct != null) return direct;
+        final nested = data['data'];
+        if (nested is String) return nested;
+        if (nested is Map<String, dynamic>) {
+          final nestedValue = _readTranscriptFromMap(nested);
+          if (nestedValue != null) return nestedValue;
+        }
       }
+    } catch (e) {
+      // If both primary and fallback fail (or return no transcript),
+      // we return empty string to indicate "no transcript available yet"
+      return '';
     }
     return '';
   }

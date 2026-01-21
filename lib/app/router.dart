@@ -42,12 +42,24 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/recordings',
-        builder: (context, state) => const RecordingsScreen(),
+        pageBuilder: (context, state) => CustomTransitionPage(
+          key: state.pageKey,
+          child: const RecordingsScreen(),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return FadeTransition(opacity: animation, child: child);
+          },
+        ),
       ),
       GoRoute(
         path: '/recordings/:id',
-        builder: (context, state) => RecordingDetailScreen(
-          recordingId: state.pathParameters['id']!,
+        pageBuilder: (context, state) => CustomTransitionPage(
+          key: state.pageKey,
+          child: RecordingDetailScreen(
+            recordingId: state.pathParameters['id']!,
+          ),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return FadeTransition(opacity: animation, child: child);
+          },
         ),
       ),
       GoRoute(
