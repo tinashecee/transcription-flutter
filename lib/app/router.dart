@@ -3,7 +3,11 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter/material.dart';
 
 import '../presentation/auth/login_screen.dart';
+import '../presentation/auth/splash_screen.dart';
+import '../presentation/auth/forgot_password_screen.dart';
 import '../presentation/auth/auth_controller.dart';
+import '../presentation/auth/auth_layout.dart';
+import '../presentation/layout/dashboard_layout.dart';
 import '../presentation/recordings/recordings_screen.dart';
 import '../presentation/recordings/recording_detail_screen.dart';
 import '../presentation/system/system_status_screen.dart';
@@ -12,81 +16,84 @@ final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authControllerProvider);
 
   return GoRouter(
-    initialLocation: '/login', // Start with login page
+    initialLocation: '/splash',
     refreshListenable: authState,
-    observers: [
-      _RouterLoggingObserver(),
-    ],
     redirect: (context, state) {
-      print('[Router] redirect check: '
-          'location=${state.matchedLocation} '
-          'full=${state.uri} '
-          'isLogin=${state.matchedLocation == '/login'} '
-          'isAuthed=${authState.value.isAuthenticated}');
       final isLogin = state.matchedLocation == '/login';
+      final isSplash = state.matchedLocation == '/splash';
+      final isForgot = state.matchedLocation == '/forgot-password';
       final isAuthed = authState.value.isAuthenticated;
-      if (!isAuthed && !isLogin) {
-        print('[Router] redirect -> /login');
+
+      if (!isAuthed && !isLogin && !isSplash && !isForgot) {
         return '/login';
       }
-      if (isAuthed && isLogin) {
-        print('[Router] redirect -> /recordings');
+
+      if (isAuthed && (isLogin || isSplash || isForgot)) {
         return '/recordings';
       }
+
       return null;
     },
     routes: [
       GoRoute(
-        path: '/login',
-        builder: (context, state) => const LoginScreen(),
+        path: '/splash',
+        builder: (context, state) => const SplashScreen(),
       ),
-      GoRoute(
-        path: '/recordings',
-        pageBuilder: (context, state) => CustomTransitionPage(
-          key: state.pageKey,
-          child: const RecordingsScreen(),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return FadeTransition(opacity: animation, child: child);
-          },
-        ),
-      ),
-      GoRoute(
-        path: '/recordings/:id',
-        pageBuilder: (context, state) => CustomTransitionPage(
-          key: state.pageKey,
-          child: RecordingDetailScreen(
-            recordingId: state.pathParameters['id']!,
+      
+      // Auth Shell for consistent background and header/footer
+      ShellRoute(
+        builder: (context, state, child) {
+          return AuthLayout(
+            location: state.matchedLocation,
+            child: child,
+          );
+        },
+        routes: [
+          GoRoute(
+            path: '/login',
+            builder: (context, state) => const LoginScreen(),
           ),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return FadeTransition(opacity: animation, child: child);
-          },
-        ),
+          GoRoute(
+            path: '/forgot-password',
+            builder: (context, state) => const ForgotPasswordScreen(),
+          ),
+        ],
       ),
-      GoRoute(
-        path: '/system',
-        builder: (context, state) => const SystemStatusScreen(),
+
+      // Dashboard Shell for persistent sidebar and layout
+      ShellRoute(
+        builder: (context, state, child) {
+          return DashboardLayout(
+            location: state.matchedLocation,
+            child: child,
+          );
+        },
+        routes: [
+          GoRoute(
+            path: '/recordings',
+            pageBuilder: (context, state) => CustomTransitionPage(
+              key: state.pageKey,
+              child: const RecordingsScreen(),
+              transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                return FadeTransition(opacity: animation, child: child);
+              },
+            ),
+            routes: [
+              GoRoute(
+                path: ':id',
+                builder: (context, state) {
+                  final id = state.pathParameters['id']!;
+                  return RecordingDetailScreen(recordingId: id);
+                },
+              ),
+            ],
+          ),
+          GoRoute(
+            path: '/system-status',
+            builder: (context, state) => const SystemStatusScreen(),
+          ),
+        ],
       ),
     ],
   );
 });
-
-class _RouterLoggingObserver extends NavigatorObserver {
-  @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    print('[Router] didPush: ${route.settings.name ?? route.settings} '
-        'from=${previousRoute?.settings.name ?? previousRoute?.settings}');
-  }
-
-  @override
-  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    print('[Router] didPop: ${route.settings.name ?? route.settings} '
-        'to=${previousRoute?.settings.name ?? previousRoute?.settings}');
-  }
-
-  @override
-  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
-    print('[Router] didReplace: '
-        'new=${newRoute?.settings.name ?? newRoute?.settings} '
-        'old=${oldRoute?.settings.name ?? oldRoute?.settings}');
-  }
-}

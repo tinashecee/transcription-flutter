@@ -71,7 +71,7 @@ class RecordingRepositoryImpl implements RecordingRepository {
   }
 
   @override
-  Future<List<Recording>> fetchRecordings({
+  Future<PaginatedRecordings> fetchRecordings({
     required int page,
     required int pageSize,
     required RecordingFilters filters,
@@ -106,8 +106,9 @@ class RecordingRepositoryImpl implements RecordingRepository {
         ? '/user/recordings/latest_paginated'
         : '/recordings/latest_paginated';
 
-    // Use by_court endpoints only for "All Recordings" when no search is active
-    if (!useUserEndpoint && !hasSearch && hasCourt) {
+    // Use by_court endpoints only for "All Recordings" when no search or date filters are active
+    final hasDateFilter = filters.fromDate != null || filters.toDate != null;
+    if (!useUserEndpoint && !hasSearch && !hasDateFilter && hasCourt) {
       final encodedCourt = Uri.encodeComponent(effectiveCourt.trim());
       if (hasCourtroom) {
         final encodedRoom = Uri.encodeComponent(effectiveCourtroom.trim());
@@ -122,7 +123,7 @@ class RecordingRepositoryImpl implements RecordingRepository {
             .map((json) => RecordingModel.fromJson(json as Map<String, dynamic>))
             .map((model) => model.toEntity())
             .toList();
-        return items;
+        return PaginatedRecordings(items: items, total: items.length);
       }
       final courtEndpoint = '/recordings/by_court/$encodedCourt';
       print(
@@ -134,7 +135,7 @@ class RecordingRepositoryImpl implements RecordingRepository {
           .map((json) => RecordingModel.fromJson(json as Map<String, dynamic>))
           .map((model) => model.toEntity())
           .toList();
-      return items;
+      return PaginatedRecordings(items: items, total: items.length);
     }
 
     final queryParameters = {
@@ -162,12 +163,14 @@ class RecordingRepositoryImpl implements RecordingRepository {
         .map((model) => model.toEntity())
         .toList();
 
+    final total = (response.data?['total'] as num?)?.toInt() ?? items.length;
+
     print(
       '[RecordingRepo] response items=${items.length} '
-      'total=${response.data?['total']} '
+      'total=$total '
       'has_more=${response.data?['has_more']}',
     );
-    return items;
+    return PaginatedRecordings(items: items, total: total);
   }
 
   @override
@@ -185,4 +188,9 @@ class RecordingRepositoryImpl implements RecordingRepository {
     return RecordingModel.fromJson(data).toEntity();
   }
 
+  @override
+  void clearCache() {
+    _courtsCache = null;
+    _courtroomsByCourtCache = null;
+  }
 }

@@ -13,21 +13,25 @@ class TranscriptState {
     required this.controller,
     required this.isSaving,
     this.errorMessage,
+    this.hasStartedEditing = false,
   });
 
   final QuillController controller;
   final bool isSaving;
   final String? errorMessage;
+  final bool hasStartedEditing;
 
   TranscriptState copyWith({
     QuillController? controller,
     bool? isSaving,
     String? errorMessage,
+    bool? hasStartedEditing,
   }) {
     return TranscriptState(
       controller: controller ?? this.controller,
       isSaving: isSaving ?? this.isSaving,
       errorMessage: errorMessage,
+      hasStartedEditing: hasStartedEditing ?? this.hasStartedEditing,
     );
   }
 }
@@ -44,6 +48,9 @@ class TranscriptController extends StateNotifier<TranscriptState> {
   final Ref _ref;
   String? _recordingId;
   late final Logger _logger = _ref.read(loggingServiceProvider).logger;
+  
+  /// Callback triggered on first edit. Used to update status to 'in_progress'.
+  void Function()? onFirstEdit;
 
   Future<void> load(String recordingId) async {
     _recordingId = recordingId;
@@ -89,6 +96,13 @@ class TranscriptController extends StateNotifier<TranscriptState> {
   void _setupControllerListeners(QuillController controller) {
     controller.document.changes.listen((event) {
       _logger.info('[TranscriptController] Document changed');
+      
+      // Trigger first-edit callback only once
+      if (!state.hasStartedEditing) {
+        state = state.copyWith(hasStartedEditing: true);
+        onFirstEdit?.call();
+        _logger.info('[TranscriptController] First edit detected - callback triggered');
+      }
     });
   }
 

@@ -45,9 +45,7 @@ class RecordingModel {
       prosecutionCounsel: json['prosecution_counsel'] as String? ?? '',
       defenseCounsel: json['defense_counsel'] as String? ?? '',
       date: _parseDate(rawDate),
-      status: json['transcript_status'] as String? ??
-          json['status'] as String? ??
-          'pending',
+      status: _parseStatus(json),
       audioPath: (json['audio_url'] as String?) ??
           (json['file_path'] as String?) ??
           (json['audio_path'] as String?) ??
@@ -75,6 +73,34 @@ class RecordingModel {
       return DateTime.fromMillisecondsSinceEpoch(value);
     }
     return DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  static String _parseStatus(Map<String, dynamic> json) {
+    // Prioritize transcript_status as it is specific to the transcript state
+    // 'status' might refer to the recording upload status
+    var status = json['transcript_status']?.toString();
+    
+    // Fallback if transcript_status is null
+    if (status == null || status.isEmpty) {
+      status = json['transcription_status']?.toString() ??
+               json['status']?.toString() ??
+               'pending';
+    }
+
+    // Normalize
+    status = status.trim().toLowerCase().replaceAll(' ', '_');
+    
+    // Fix known backend inconsistencies
+    if (status.contains('progress')) return 'in_progress';
+    if (status == 'inprogress') return 'in_progress';
+    if (status.contains('review')) return 'reviewed';
+    if (status.contains('complete')) return 'completed';
+    
+    // Default valid statuses
+    const valid = ['pending', 'in_progress', 'completed', 'reviewed'];
+    if (valid.contains(status)) return status;
+    
+    return 'pending';
   }
 
   static List<Map<String, dynamic>> _parseAnnotations(dynamic value) {

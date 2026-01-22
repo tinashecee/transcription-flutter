@@ -6,20 +6,19 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../domain/repositories/recording_repository.dart';
 import '../../data/providers.dart';
+import 'sidebar_provider.dart';
 
 /// A collapsible sidebar widget for court/courtroom filtering.
 /// Used in both the recordings list and recording detail screens.
 class CollapsibleSidebar extends ConsumerStatefulWidget {
   const CollapsibleSidebar({
     super.key,
-    this.initiallyCollapsed = true,
     this.selectedCourt,
     this.selectedCourtroom,
     required this.onCourtSelected,
     required this.onCourtroomSelected,
   });
 
-  final bool initiallyCollapsed;
   final String? selectedCourt;
   final String? selectedCourtroom;
   final ValueChanged<String?> onCourtSelected;
@@ -30,7 +29,6 @@ class CollapsibleSidebar extends ConsumerStatefulWidget {
 }
 
 class _CollapsibleSidebarState extends ConsumerState<CollapsibleSidebar> {
-  late bool _isCollapsed;
   bool _isLoading = true;
   String? _errorMessage;
   List<String> _courts = [];
@@ -49,7 +47,6 @@ class _CollapsibleSidebarState extends ConsumerState<CollapsibleSidebar> {
   @override
   void initState() {
     super.initState();
-    _isCollapsed = widget.initiallyCollapsed;
     _loadCourtsAndRooms();
     _loadVersion();
   }
@@ -97,11 +94,12 @@ class _CollapsibleSidebarState extends ConsumerState<CollapsibleSidebar> {
   }
 
   void _toggleCollapsed() {
-    setState(() => _isCollapsed = !_isCollapsed);
+    ref.read(sidebarCollapsedProvider.notifier).update((state) => !state);
   }
 
   void _toggleSearch() {
-    if (_isCollapsed) {
+    final isCollapsed = ref.read(sidebarCollapsedProvider);
+    if (isCollapsed) {
       _toggleCollapsed();
       setState(() => _isSearching = true);
     } else {
@@ -117,6 +115,7 @@ class _CollapsibleSidebarState extends ConsumerState<CollapsibleSidebar> {
 
   @override
   Widget build(BuildContext context) {
+    final isCollapsed = ref.watch(sidebarCollapsedProvider);
     final filteredCourts = _courts.where((court) {
       if (_searchQuery.isEmpty) return true;
       return court.toLowerCase().contains(_searchQuery);
@@ -138,7 +137,7 @@ class _CollapsibleSidebarState extends ConsumerState<CollapsibleSidebar> {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeInOut,
-      width: _isCollapsed ? _collapsedWidth : _expandedWidth,
+      width: isCollapsed ? _collapsedWidth : _expandedWidth,
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: _primaryColor,
@@ -155,11 +154,11 @@ class _CollapsibleSidebarState extends ConsumerState<CollapsibleSidebar> {
         children: [
           // Sidebar Header with toggle
           Padding(
-            padding: EdgeInsets.all(_isCollapsed ? 16 : 24),
+            padding: EdgeInsets.all(isCollapsed ? 16 : 24),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                if (_isCollapsed)
+                if (isCollapsed)
                   InkWell(
                     onTap: _toggleCollapsed,
                     borderRadius: BorderRadius.circular(12),
@@ -209,12 +208,12 @@ class _CollapsibleSidebarState extends ConsumerState<CollapsibleSidebar> {
 
           // Sticky "All" Item
           Padding(
-            padding: EdgeInsets.symmetric(horizontal: _isCollapsed ? 8 : 16),
+            padding: EdgeInsets.symmetric(horizontal: isCollapsed ? 8 : 16),
             child: _SidebarItem(
               icon: Icons.dashboard_rounded,
               label: 'All',
               isSelected: widget.selectedCourt == null,
-              isCollapsed: _isCollapsed,
+              isCollapsed: isCollapsed,
               onTap: () => widget.onCourtSelected(null),
               // hasExpandIcon removed
             ),
@@ -224,8 +223,8 @@ class _CollapsibleSidebarState extends ConsumerState<CollapsibleSidebar> {
 
           // Sticky Search/Header for Courts
           Padding(
-            padding: EdgeInsets.symmetric(horizontal: _isCollapsed ? 8 : 16),
-            child: _isCollapsed
+            padding: EdgeInsets.symmetric(horizontal: isCollapsed ? 8 : 16),
+            child: isCollapsed
                 ? IconButton(
                     onPressed: _toggleSearch,
                     icon: const Icon(Icons.search, color: Colors.white70, size: 24),
@@ -310,7 +309,7 @@ class _CollapsibleSidebarState extends ConsumerState<CollapsibleSidebar> {
                   child: ListView(
                       controller: _scrollController,
                       padding: EdgeInsets.symmetric(
-                        horizontal: _isCollapsed ? 8 : 16,
+                        horizontal: isCollapsed ? 8 : 16,
                         vertical: 8,
                       ),
                       children: [
@@ -319,7 +318,7 @@ class _CollapsibleSidebarState extends ConsumerState<CollapsibleSidebar> {
                             icon: Icons.account_balance_rounded,
                             label: court,
                             isSelected: widget.selectedCourt == court,
-                            isCollapsed: _isCollapsed,
+                            isCollapsed: isCollapsed,
                             onTap: () => widget.onCourtSelected(court),
                           ),
                         ),
@@ -341,7 +340,7 @@ class _CollapsibleSidebarState extends ConsumerState<CollapsibleSidebar> {
           ),
 
           // App Version Footer
-          if (!_isCollapsed && _appVersion.isNotEmpty)
+          if (!isCollapsed && _appVersion.isNotEmpty)
             Padding(
               padding: const EdgeInsets.all(24),
               child: Column(

@@ -16,6 +16,14 @@ class AssignmentRepositoryImpl implements AssignmentRepository {
   // Users list can be cached since it rarely changes during a session
   List<User>? _availableUsersCache;
   Map<String, String>? _usersByEmailCache;
+  
+  // Futures for request deduplication
+  Future<Map<String, String>>? _usersByEmailFuture;
+  final Map<String, Future<List<AssignedUser>>> _assignedUsersFutures = {};
+  
+  // Short-term cache for assigned users to prevent flooding during list scrolls/renders
+  final Map<String, _CacheEntry<List<AssignedUser>>> _assignedUsersCache = {};
+  static const _cacheDuration = Duration(seconds: 5);
 
   @override
   Future<void> assignRecording(
@@ -94,8 +102,32 @@ class AssignmentRepositoryImpl implements AssignmentRepository {
 
   @override
   Future<List<AssignedUser>> getAssignedUsers(String recordingId) async {
-    // NO CACHING - Always fetch fresh
-    print('[AssignmentRepo] GET /transcription_users/$recordingId (NO CACHE)');
+    // 1. Check short-term cache
+    final cached = _assignedUsersCache[recordingId];
+    if (cached != null && !cached.isExpired) {
+      return cached.value;
+    }
+
+    // 2. Check if there's an in-flight request for this recordingId
+    if (_assignedUsersFutures.containsKey(recordingId)) {
+      return _assignedUsersFutures[recordingId]!;
+    }
+
+    // 3. Start a new request and deduplicate
+    final future = _fetchAssignedUsersInternal(recordingId);
+    _assignedUsersFutures[recordingId] = future;
+
+    try {
+      final items = await future;
+      _assignedUsersCache[recordingId] = _CacheEntry(items);
+      return items;
+    } finally {
+      _assignedUsersFutures.remove(recordingId);
+    }
+  }
+
+  Future<List<AssignedUser>> _fetchAssignedUsersInternal(String recordingId) async {
+    print('[AssignmentRepo] GET /transcription_users/$recordingId (FETCHING)');
     final response = await _client.dio.get<List<dynamic>>(
       '/transcription_users/$recordingId',
     );
@@ -106,7 +138,6 @@ class AssignmentRepositoryImpl implements AssignmentRepository {
             .toList() ??
         [];
 
-    // Resolve missing names using /users email->name map when available
     final usersByEmail = await _getUsersByEmail();
     if (usersByEmail.isNotEmpty) {
       items = items.map((user) {
@@ -164,9 +195,25 @@ class AssignmentRepositoryImpl implements AssignmentRepository {
   }
 
   Future<Map<String, String>> _getUsersByEmail() async {
-    // Users by email can be cached - it's reference data
+    // 1. Check cache
     if (_usersByEmailCache != null) return _usersByEmailCache!;
+    
+    // 2. Check in-flight request (deduplication)
+    if (_usersByEmailFuture != null) return _usersByEmailFuture!;
+
+    _usersByEmailFuture = _fetchUsersByEmailInternal();
     try {
+      final result = await _usersByEmailFuture!;
+      _usersByEmailCache = result;
+      return result;
+    } finally {
+      _usersByEmailFuture = null;
+    }
+  }
+
+  Future<Map<String, String>> _fetchUsersByEmailInternal() async {
+    try {
+      print('[AssignmentRepo] GET /users (FOR MAP)');
       final response = await _client.dio.get<List<dynamic>>('/users');
       final map = <String, String>{};
       for (final raw in response.data ?? const []) {
@@ -176,10 +223,9 @@ class AssignmentRepositoryImpl implements AssignmentRepository {
         final name = (data['name'] as String?)?.trim();
         map[email] = (name == null || name.isEmpty) ? email : name;
       }
-      _usersByEmailCache = map;
       return map;
-    } catch (_) {
-      _usersByEmailCache = const {};
+    } catch (e) {
+      print('[AssignmentRepo] _fetchUsersByEmailInternal error: $e');
       return const {};
     }
   }
@@ -202,4 +248,13 @@ class AssignmentRepositoryImpl implements AssignmentRepository {
         normalized == 'super_admin' ||
         normalized == 'superadmin';
   }
+}
+
+class _CacheEntry<T> {
+  _CacheEntry(this.value) : timestamp = DateTime.now();
+  final T value;
+  final DateTime timestamp;
+
+  bool get isExpired =>
+      DateTime.now().difference(timestamp) > const Duration(seconds: 5);
 }

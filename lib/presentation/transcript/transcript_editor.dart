@@ -4,16 +4,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'transcript_controller.dart';
+import '../../data/providers.dart';
+import '../recordings/recording_detail_controller.dart';
+import '../recordings/recordings_controller.dart';
 
 class TranscriptEditor extends ConsumerStatefulWidget {
   const TranscriptEditor({
     super.key,
     required this.recordingId,
     this.isAssigned = true,
+    this.isEditing = false,
   });
 
   final String recordingId;
   final bool isAssigned;
+  final bool isEditing;
 
   @override
   ConsumerState<TranscriptEditor> createState() => _TranscriptEditorState();
@@ -22,7 +27,8 @@ class TranscriptEditor extends ConsumerStatefulWidget {
 class _TranscriptEditorState extends ConsumerState<TranscriptEditor> {
   late final FocusNode _focusNode;
   late final ScrollController _scrollController;
-  String _selectedFont = 'Arial';
+  String _selectedFont = 'Helvetica';
+  bool _hasTriggeredProgress = false;
 
   @override
   void initState() {
@@ -32,6 +38,32 @@ class _TranscriptEditorState extends ConsumerState<TranscriptEditor> {
 
     // Load transcript
     ref.read(transcriptControllerProvider.notifier).load(widget.recordingId);
+    
+    // Setup first-edit callback for auto-progress
+    ref.read(transcriptControllerProvider.notifier).onFirstEdit = _onFirstEdit;
+  }
+  
+  void _onFirstEdit() {
+    if (_hasTriggeredProgress || !widget.isAssigned || !widget.isEditing) return;
+    _hasTriggeredProgress = true;
+    
+    // Update status to 'in_progress' silently in background
+    _updateStatusToInProgress();
+  }
+  
+  Future<void> _updateStatusToInProgress() async {
+    try {
+      await ref.read(statusRepositoryProvider).updateStatus(
+        recordingId: widget.recordingId,
+        status: 'in_progress',
+      );
+      // Update the cached list so the patch logic works
+      ref.read(recordingsControllerProvider.notifier).updateRecordingStatus(widget.recordingId, 'in_progress');
+      // NOTE: We do NOT invalidate recordingDetailProvider here because it causes 
+      // the transcript to reload and wipe user's unsaved changes.
+    } catch (e) {
+      debugPrint('Failed to update status: $e');
+    }
   }
 
   @override
@@ -65,7 +97,7 @@ class _TranscriptEditorState extends ConsumerState<TranscriptEditor> {
       case 'Verdana':
         return GoogleFonts.sourceSans3();
       case 'Helvetica':
-        return GoogleFonts.roboto();
+        return GoogleFonts.inter();
       case 'Trebuchet MS':
         return GoogleFonts.firaSans();
       case 'Aptos':
@@ -90,17 +122,22 @@ class _TranscriptEditorState extends ConsumerState<TranscriptEditor> {
         return GoogleFonts.greatVibes();
       
       default:
-        return GoogleFonts.roboto();
+        return GoogleFonts.inter();
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(transcriptControllerProvider);
-    final canEdit = widget.isAssigned;
+    final canEdit = widget.isAssigned && widget.isEditing;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    // Enforce read-only state on the controller
+    state.controller.readOnly = !canEdit;
+
+    return Stack(
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (state.errorMessage != null)
           Container(
@@ -120,7 +157,7 @@ class _TranscriptEditorState extends ConsumerState<TranscriptEditor> {
                     Expanded(
                       child: Text(
                         state.errorMessage!,
-                        style: GoogleFonts.roboto(
+                        style: GoogleFonts.inter(
                           color: Colors.red.shade900,
                           fontWeight: FontWeight.w500,
                         ),
@@ -146,37 +183,55 @@ class _TranscriptEditorState extends ConsumerState<TranscriptEditor> {
 
 
 
+        // 4. Quill Toolbar (Minimal/Floating) + Save Button
+        if (canEdit)
         // 4. Quill Toolbar (Minimal/Floating)
         if (canEdit)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            decoration: BoxDecoration(
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Material(
               color: const Color(0xFFF3F4F6),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                QuillSimpleToolbar(
-                  controller: state.controller,
-                  config: QuillSimpleToolbarConfig(
-                    toolbarSize: 32,
-                    showFontFamily: false,
-                    showFontSize: false,
-                    showBoldButton: true,
-                    showItalicButton: true,
-                    showUnderLineButton: true,
-                    showStrikeThrough: false,
-                    showAlignmentButtons: false,
-                    showListBullets: true,
-                    showListNumbers: true,
-                    showUndo: true,
-                    showRedo: true,
+              child: SizedBox(
+                width: double.infinity,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  child: QuillSimpleToolbar(
+                    controller: state.controller,
+                    config: QuillSimpleToolbarConfig(
+                      toolbarSize: 28,
+                      buttonOptions: const QuillSimpleToolbarButtonOptions(
+                        base: QuillToolbarBaseButtonOptions(
+                          iconSize: 18,
+                        ),
+                      ),
+                      showFontFamily: true,
+                      showFontSize: true,
+                      showBoldButton: true,
+                      showItalicButton: true,
+                      showUnderLineButton: true,
+                      showStrikeThrough: false,
+                      showColorButton: false, 
+                      showBackgroundColorButton: false,
+                      showAlignmentButtons: false,
+                      showListBullets: true,
+                      showListNumbers: true,
+                      showCodeBlock: false,
+                      showQuote: false,
+                      showIndent: false,
+                      showLink: false,
+                      showUndo: true,
+                      showRedo: true,
+                      showDirection: false,
+                      showSearchButton: false,
+                      showSubscript: false,
+                      showSuperscript: false,
+                    ),
                   ),
                 ),
-              ],
+              ),
             ),
           ),
-        const SizedBox(height: 12),
+        const SizedBox.shrink(),
         // 2. Editor Surface (Page Look)
         Expanded(
           child: Container(
@@ -194,35 +249,45 @@ class _TranscriptEditorState extends ConsumerState<TranscriptEditor> {
             ),
             child: Column(
               children: [
-                // Warning Banner inside the "page" if read-only
-                if (!canEdit)
+                // Warning Banner inside the "page" if read-only AND NOT ASSIGNED
+                // If assigned, we just show the "Edit" button in toolbar, so no need for a warning.
+                if (!canEdit && !widget.isAssigned)
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.shade50,
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(12),
-                        topRight: Radius.circular(12),
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(top: 8, right: 16),
+                    child: Tooltip(
+                      message: 'This transcript is not assigned to you its on read mode, to be editable you need it assign to you.',
+                      padding: const EdgeInsets.all(8),
+                      textStyle: GoogleFonts.inter(color: Colors.white, fontSize: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.black87,
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      border: Border(
-                        bottom: BorderSide(color: Colors.orange.shade100),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.lock_outline,
-                            size: 16, color: Colors.orange.shade800),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Read-only view',
-                          style: GoogleFonts.inter(
-                            color: Colors.orange.shade900,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.orange.shade200),
                         ),
-                      ],
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.lock_outline,
+                                size: 12, color: Colors.orange.shade800),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Read Only',
+                              style: GoogleFonts.inter(
+                                color: Colors.orange.shade900,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
 
@@ -235,7 +300,7 @@ class _TranscriptEditorState extends ConsumerState<TranscriptEditor> {
                       focusNode: _focusNode,
                       scrollController: _scrollController,
                       config: QuillEditorConfig(
-                        padding: const EdgeInsets.all(24),
+                        padding: const EdgeInsets.only(left: 16, right: 16, top: 0, bottom: 16),
                         autoFocus: false,
                         readOnlyMouseCursor: SystemMouseCursors.text,
                         enableInteractiveSelection: true,
@@ -244,7 +309,11 @@ class _TranscriptEditorState extends ConsumerState<TranscriptEditor> {
                           if (attribute.key == 'font') {
                             return _getFontStyle(attribute.value);
                           }
-                          return GoogleFonts.roboto();
+                          return GoogleFonts.inter(
+                            height: 1.4,
+                            color: const Color(0xFF374151),
+                            fontSize: 14, // Small font size
+                          );
                         },
                       ),
                     ),
@@ -257,8 +326,10 @@ class _TranscriptEditorState extends ConsumerState<TranscriptEditor> {
         ),
         ],
       ],
-    );
-  }
+    ),
+    ],
+  );
+}
 }
 
 

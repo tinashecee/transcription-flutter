@@ -13,6 +13,8 @@ class RecordingsState {
     required this.hasMore,
     required this.page,
     required this.filters,
+    required this.totalItems,
+    required this.pageSize,
     this.errorMessage,
   });
 
@@ -21,6 +23,8 @@ class RecordingsState {
   final bool hasMore;
   final int page;
   final RecordingFilters filters;
+  final int totalItems;
+  final int pageSize;
   final String? errorMessage;
 
   RecordingsState copyWith({
@@ -29,6 +33,8 @@ class RecordingsState {
     bool? hasMore,
     int? page,
     RecordingFilters? filters,
+    int? totalItems,
+    int? pageSize,
     String? errorMessage,
   }) {
     return RecordingsState(
@@ -37,6 +43,8 @@ class RecordingsState {
       hasMore: hasMore ?? this.hasMore,
       page: page ?? this.page,
       filters: filters ?? this.filters,
+      totalItems: totalItems ?? this.totalItems,
+      pageSize: pageSize ?? this.pageSize,
       errorMessage: errorMessage,
     );
   }
@@ -46,6 +54,8 @@ class RecordingsState {
         isLoading: false,
         hasMore: true,
         page: 1,
+        totalItems: 0,
+        pageSize: 20,
         filters: const RecordingFilters(tab: RecordingTab.all),
       );
 }
@@ -54,25 +64,27 @@ class RecordingsController extends StateNotifier<RecordingsState> {
   RecordingsController(this._ref) : super(RecordingsState.initial());
 
   final Ref _ref;
-  static const _pageSize = 20;
-
   Future<void> loadInitial() async {
-    // Clear current state completely before fetching fresh from API
-    state = RecordingsState(
-      items: const [], // Clear all items
+    state = state.copyWith(
+      items: const [],
       isLoading: true,
       hasMore: true,
       page: 1,
-      filters: state.filters,
       errorMessage: null,
     );
-    print('[RecordingsController] State cleared, fetching fresh from API...');
-    await _load(page: 1, replace: true);
+    await _load(page: 1);
   }
 
-  Future<void> loadMore() async {
-    if (state.isLoading || !state.hasMore) return;
-    await _load(page: state.page + 1, replace: false);
+  Future<void> setPage(int page) async {
+    if (state.isLoading || page == state.page || page < 1) return;
+    state = state.copyWith(isLoading: true);
+    await _load(page: page);
+  }
+
+  Future<void> setPageSize(int size) async {
+    if (state.pageSize == size) return;
+    state = state.copyWith(pageSize: size, page: 1, isLoading: true, items: []);
+    await _load(page: 1);
   }
 
   Future<void> updateFilters(RecordingFilters filters) async {
@@ -117,28 +129,37 @@ class RecordingsController extends StateNotifier<RecordingsState> {
     await loadInitial();
   }
 
-  Future<void> _load({required int page, required bool replace}) async {
+  Future<void> fullRefresh() async {
+    _ref.read(recordingRepositoryProvider).clearCache();
+    await loadInitial();
+  }
+
+  Future<void> clearFilters() async {
+    // Keeps the current tab but clears everything else
+    final defaultFilters = RecordingFilters(tab: state.filters.tab);
+    await updateFilters(defaultFilters);
+  }
+
+  Future<void> _load({required int page}) async {
     try {
       final repo = _ref.read(recordingRepositoryProvider);
       final userId = _ref.read(authSessionProvider).user?.id;
-      print(
-        '[RecordingsController] load page=$page replace=$replace '
-        'tab=${state.filters.tab.name} userId=$userId',
-      );
-      final items = await repo.fetchRecordings(
+      
+      final response = await repo.fetchRecordings(
         page: page,
-        pageSize: _pageSize,
+        pageSize: state.pageSize,
         filters: state.filters,
         userId: userId,
       );
       
-      final hasMore = items.length >= _pageSize;
+      final hasMore = response.items.length >= state.pageSize;
       
       state = state.copyWith(
         isLoading: false,
         hasMore: hasMore,
         page: page,
-        items: replace ? items : [...state.items, ...items],
+        items: response.items,
+        totalItems: response.total,
       );
     } catch (error) {
       print('[RecordingsController] load error: $error');
@@ -146,6 +167,20 @@ class RecordingsController extends StateNotifier<RecordingsState> {
         isLoading: false,
         errorMessage: mapDioError(error),
       );
+    }
+  }
+
+  void updateRecordingStatus(String id, String newStatus) {
+    if (state.isLoading) return;
+    
+    // Normalize status to lowercase/snake_case for consistency
+    final normalized = newStatus.trim().toLowerCase().replaceAll(' ', '_');
+    
+    final index = state.items.indexWhere((r) => r.id == id);
+    if (index != -1) {
+      final updatedItems = List<Recording>.from(state.items);
+      updatedItems[index] = updatedItems[index].copyWith(status: normalized);
+      state = state.copyWith(items: updatedItems);
     }
   }
 }

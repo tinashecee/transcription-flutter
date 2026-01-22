@@ -59,26 +59,22 @@ class _SystemStatusScreenState extends State<SystemStatusScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF0F4F3),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF115343),
-        foregroundColor: Colors.white,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/recordings'),
-          tooltip: 'Back to Recordings',
-        ),
-        title: Text(
-          'System Status',
-          style: GoogleFonts.roboto(fontWeight: FontWeight.w600),
-        ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 24),
+            child: Text(
+              'System Status',
+              style: GoogleFonts.roboto(
+                fontSize: 24,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF115343),
+              ),
+            ),
+          ),
             // App Version Card
             Container(
               width: double.infinity,
@@ -225,8 +221,7 @@ class _SystemStatusScreenState extends State<SystemStatusScreen> {
             ),
           ],
         ),
-      ),
-    );
+      );
   }
 
   Widget _buildInfoRow(String label, String value) {

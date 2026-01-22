@@ -20,8 +20,18 @@ class RecordingFilters {
 
 enum RecordingTab { all, myList }
 
+class PaginatedRecordings {
+  const PaginatedRecordings({
+    required this.items,
+    required this.total,
+  });
+
+  final List<Recording> items;
+  final int total;
+}
+
 abstract class RecordingRepository {
-  Future<List<Recording>> fetchRecordings({
+  Future<PaginatedRecordings> fetchRecordings({
     required int page,
     required int pageSize,
     required RecordingFilters filters,
@@ -29,4 +39,6 @@ abstract class RecordingRepository {
   });
 
   Future<Recording> fetchRecording(String id);
+
+  void clearCache();
 }

@@ -17,6 +17,7 @@ import '../player/mini_player_bar.dart';
 import 'recordings_controller.dart';
 import '../../services/update_manager.dart';
 import '../widgets/collapsible_sidebar.dart';
+import '../widgets/action_button.dart';
 
 class RecordingsScreen extends ConsumerStatefulWidget {
   const RecordingsScreen({super.key});
@@ -72,107 +73,65 @@ class _RecordingsScreenState extends ConsumerState<RecordingsScreen> {
     final state = ref.watch(recordingsControllerProvider);
     final controller = ref.read(recordingsControllerProvider.notifier);
     final auth = ref.watch(authSessionProvider);
-    print('[RecordingsScreen] build items=${state.items.length} '
-        'loading=${state.isLoading} error=${state.errorMessage} '
-        'tab=${state.filters.tab.name}');
-
-    return Scaffold(
-      backgroundColor: const Color(0xFFF0F4F3),
-      // bottomNavigationBar: const MiniPlayerBar(),
-      body: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFFF5F7FA), // Light theme background
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // 1. Floating Sidebar
-            // 1. Floating Sidebar
-            CollapsibleSidebar(
-              initiallyCollapsed: false,
-              selectedCourt: state.filters.court,
-              selectedCourtroom: state.filters.courtroom,
-              onCourtSelected: (court) => controller.updateFilters(
-                RecordingFilters(
-                  court: court,
-                  courtroom: null,
-                  query: state.filters.query,
-                  fromDate: state.filters.fromDate,
-                  toDate: state.filters.toDate,
-                  tab: state.filters.tab,
-                ),
-              ),
-              onCourtroomSelected: (courtroom) => controller.updateFilters(
-                RecordingFilters(
-                  court: state.filters.court,
-                  courtroom: courtroom,
-                  query: state.filters.query,
-                  fromDate: state.filters.fromDate,
-                  toDate: state.filters.toDate,
-                  tab: state.filters.tab,
+    
+    return Padding(
+      padding: const EdgeInsets.only(top: 32, right: 32, bottom: 32),
+      child: Column(
+        children: [
+          _SearchHeader(
+            filters: state.filters,
+            onFiltersChanged: controller.updateFilters,
+          ),
+          if (auth.isAuthenticated)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 24),
+              child: _TabsBar(
+                selected: state.filters.tab,
+                onChanged: (tab) => controller.updateFilters(
+                  RecordingFilters(
+                    court: state.filters.court,
+                    courtroom: state.filters.courtroom,
+                    query: state.filters.query,
+                    fromDate: state.filters.fromDate,
+                    toDate: state.filters.toDate,
+                    tab: tab,
+                  ),
                 ),
               ),
             ),
-
-            // Main Content
-            // Main Content
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(top: 24, right: 24, bottom: 24),
-                child: Column(
-                  children: [
-                    _SearchHeader(
-                      filters: state.filters,
-                      onFiltersChanged: controller.updateFilters,
+          Expanded(
+            child: state.isLoading && state.items.isEmpty
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Color(0xFF115343),
+                      ),
                     ),
-                    if (auth.isAuthenticated)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 24),
-                        child: _TabsBar(
-                          selected: state.filters.tab,
-                          onChanged: (tab) => controller.updateFilters(
-                            RecordingFilters(
-                              court: state.filters.court,
-                              courtroom: state.filters.courtroom,
-                              query: state.filters.query,
-                              fromDate: state.filters.fromDate,
-                              toDate: state.filters.toDate,
-                              tab: tab,
-                            ),
+                  )
+                  : Column(
+                      children: [
+                        const _ListHeader(),
+                        Expanded(
+                          child: _RecordingsList(
+                            items: state.items,
+                            isLoading: state.isLoading,
+                            isMyList: state.filters.tab == RecordingTab.myList,
+                            canAssign: _canAssign(auth.user?.role),
                           ),
                         ),
-                      ),
-                    Expanded(
-                      child: state.isLoading && state.items.isEmpty
-                          ? const Center(
-                              child: CircularProgressIndicator(
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  Color(0xFF115343),
-                                ),
-                              ),
-                            )
-                          : Column(
-                              children: [
-                                const _ListHeader(),
-                                Expanded(
-                                  child: _RecordingsList(
-                                    items: state.items,
-                                    isLoading: state.isLoading,
-                                    onLoadMore: controller.loadMore,
-                                    isMyList: state.filters.tab == RecordingTab.myList,
-                                    canAssign: _canAssign(auth.user?.role),
-                                    hasMore: state.hasMore,
-                                  ),
-                                ),
-                              ],
-                            ),
+                        if (state.items.isNotEmpty)
+                          _PaginationFooter(
+                            page: state.page,
+                            pageSize: state.pageSize,
+                            totalItems: state.totalItems,
+                            onPageChanged: controller.setPage,
+                            onPageSizeChanged: controller.setPageSize,
+                            isLoading: state.isLoading,
+                          ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1076,11 +1035,23 @@ class _SearchHeaderState extends State<_SearchHeader> {
               child: Container(
                 constraints: const BoxConstraints(maxWidth: 600),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF115343).withOpacity(0.05),
+                  color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: const Color(0xFF115343).withOpacity(0.1),
+                    color: const Color(0xFF115343).withOpacity(0.12),
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF115343).withOpacity(0.06),
+                      blurRadius: 15,
+                      offset: const Offset(0, 4),
+                    ),
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.02),
+                      blurRadius: 2,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
                 ),
                 child: TextField(
                   controller: _searchController,
@@ -1120,8 +1091,31 @@ class _SearchHeaderState extends State<_SearchHeader> {
           ),
 
           // Right Side Actions
+          const SizedBox(width: 16),
+          Consumer(
+            builder: (context, ref, _) => ActionButton(
+              icon: Icons.backspace_outlined,
+              tooltip: 'Clear All Filters',
+              onPressed: () {
+                _searchController.clear();
+                ref.read(recordingsControllerProvider.notifier).clearFilters();
+              },
+            ),
+          ),
+          const SizedBox(width: 16),
+          Consumer(
+            builder: (context, ref, _) {
+              final isLoading = ref.watch(recordingsControllerProvider.select((s) => s.isLoading));
+              return ActionButton(
+                icon: Icons.refresh_rounded,
+                tooltip: 'Refresh List',
+                isSpinning: isLoading,
+                onPressed: isLoading ? null : () => ref.read(recordingsControllerProvider.notifier).fullRefresh(),
+              );
+            },
+          ),
           const SizedBox(width: 24),
-          _ActionButton(
+          ActionButton(
             icon: Icons.filter_list_rounded,
             tooltip: 'Filter by Date',
             onPressed: () async {
@@ -1139,7 +1133,7 @@ class _SearchHeaderState extends State<_SearchHeader> {
           const _UpdateBadge(),
           const SizedBox(width: 12),
           Consumer(
-            builder: (context, ref, _) => _ActionButton(
+            builder: (context, ref, _) => ActionButton(
               icon: Icons.logout_rounded,
               tooltip: 'Logout',
               onPressed: () => ref.read(authControllerProvider).logout(),
@@ -1153,50 +1147,8 @@ class _SearchHeaderState extends State<_SearchHeader> {
   }
 }
 
-class _ActionButton extends StatelessWidget {
-  const _ActionButton({
-    required this.icon,
-    this.onPressed,
-    this.tooltip,
-    this.color,
-    this.iconColor,
-  });
+// ActionButton refactored to shared widget in lib/presentation/widgets/action_button.dart
 
-  final IconData icon;
-  final VoidCallback? onPressed;
-  final String? tooltip;
-  final Color? color;
-  final Color? iconColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip ?? '',
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: color ?? const Color(0xFF115343).withOpacity(0.08),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: (iconColor ?? const Color(0xFF115343)).withOpacity(0.1),
-              ),
-            ),
-            child: Icon(
-              icon,
-              size: 20,
-              color: iconColor ?? const Color(0xFF115343),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _UpdateBadge extends StatelessWidget {
   const _UpdateBadge();
@@ -1210,7 +1162,7 @@ class _UpdateBadge extends StatelessWidget {
         final hasUpdate = snapshot.data ?? false;
         if (!hasUpdate) return const SizedBox.shrink();
         
-        return _ActionButton(
+        return ActionButton(
           icon: Icons.system_update,
           tooltip: 'New update available',
           color: Colors.red.withOpacity(0.1),
@@ -1331,18 +1283,14 @@ class _RecordingsList extends StatelessWidget {
   const _RecordingsList({
     required this.items,
     required this.isLoading,
-    required this.onLoadMore,
     required this.isMyList,
     required this.canAssign,
-    required this.hasMore,
   });
 
   final List<Recording> items;
   final bool isLoading;
-  final VoidCallback onLoadMore;
   final bool isMyList;
   final bool canAssign;
-  final bool hasMore;
 
   @override
   Widget build(BuildContext context) {
@@ -1367,18 +1315,9 @@ class _RecordingsList extends StatelessWidget {
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 24),
-      itemCount: items.length + (hasMore ? 1 : 0),
+      padding: const EdgeInsets.only(bottom: 8),
+      itemCount: items.length,
       itemBuilder: (context, index) {
-        if (index >= items.length) {
-          // Load More at end of list
-          return Center(
-            child: _LoadMoreButton(
-              onPressed: onLoadMore,
-              isLoading: isLoading,
-            ),
-          );
-        }
         return _RecordingRow(
           index: index + 1,
           recording: items[index],
@@ -1390,77 +1329,181 @@ class _RecordingsList extends StatelessWidget {
   }
 }
 
-class _LoadMoreButton extends StatefulWidget {
-  const _LoadMoreButton({
-    required this.onPressed,
+class _PaginationFooter extends StatelessWidget {
+  const _PaginationFooter({
+    required this.page,
+    required this.pageSize,
+    required this.totalItems,
+    required this.onPageChanged,
+    required this.onPageSizeChanged,
     this.isLoading = false,
   });
 
-  final VoidCallback onPressed;
+  final int page;
+  final int pageSize;
+  final int totalItems;
+  final ValueChanged<int> onPageChanged;
+  final ValueChanged<int> onPageSizeChanged;
   final bool isLoading;
 
   @override
-  State<_LoadMoreButton> createState() => _LoadMoreButtonState();
+  Widget build(BuildContext context) {
+    final startRange = totalItems == 0 ? 0 : ((page - 1) * pageSize) + 1;
+    final endRange = (page * pageSize) > totalItems ? totalItems : (page * pageSize);
+    final totalPages = (totalItems / pageSize).ceil();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          top: BorderSide(color: Colors.grey.withOpacity(0.1)),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // Range Info
+          Row(
+            children: [
+              Text(
+                '$startRange-$endRange',
+                style: GoogleFonts.roboto(
+                  color: const Color(0xFF115343),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+              Text(
+                ' / $totalItems',
+                style: GoogleFonts.roboto(
+                  color: Colors.grey[600],
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+
+          // Pagination Controls
+          Row(
+            children: [
+              // Rows per page
+              Text(
+                'Rows per page:',
+                style: GoogleFonts.roboto(
+                  color: Colors.grey[600],
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                height: 36,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF115343).withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: const Color(0xFF115343).withOpacity(0.1),
+                  ),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<int>(
+                    value: [20, 50, 100].contains(pageSize) ? pageSize : 20,
+                    icon: const Icon(Icons.arrow_drop_down, size: 20, color: Color(0xFF115343)),
+                    style: GoogleFonts.roboto(
+                      color: const Color(0xFF115343),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    items: [20, 50, 100].map((int value) {
+                      return DropdownMenuItem<int>(
+                        value: value,
+                        child: Text('$value'),
+                      );
+                    }).toList(),
+                    onChanged: isLoading ? null : (value) => onPageSizeChanged(value!),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 32),
+
+              // Page Nav
+              _NavButton(
+                icon: Icons.chevron_left_rounded,
+                onPressed: page > 1 && !isLoading ? () => onPageChanged(page - 1) : null,
+                tooltip: 'Previous Page',
+              ),
+              const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF115343).withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'Page $page of $totalPages',
+                  style: GoogleFonts.roboto(
+                    color: const Color(0xFF115343),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              _NavButton(
+                icon: Icons.chevron_right_rounded,
+                onPressed: page < totalPages && !isLoading ? () => onPageChanged(page + 1) : null,
+                tooltip: 'Next Page',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _LoadMoreButtonState extends State<_LoadMoreButton> {
-  bool _isHovered = false;
+class _NavButton extends StatelessWidget {
+  const _NavButton({
+    required this.icon,
+    this.onPressed,
+    required this.tooltip,
+  });
+
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final String tooltip;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 32),
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _isHovered = true),
-        onExit: (_) => setState(() => _isHovered = false),
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          onTap: widget.isLoading ? null : widget.onPressed,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: _isHovered ? const Color(0xFF115343) : Colors.transparent,
-              borderRadius: BorderRadius.circular(30),
+              color: onPressed == null ? Colors.transparent : Colors.white,
               border: Border.all(
-                color: const Color(0xFF115343),
-                width: 2,
+                color: (onPressed == null ? Colors.grey : const Color(0xFF115343)).withOpacity(0.2),
               ),
-              boxShadow: _isHovered
-                  ? [
-                      BoxShadow(
-                        color: const Color(0xFF115343).withOpacity(0.3),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      )
-                    ]
-                  : [],
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: onPressed != null ? [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                )
+              ] : null,
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (widget.isLoading)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 12),
-                    child: SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: _isHovered ? Colors.white : const Color(0xFF115343),
-                      ),
-                    ),
-                  ),
-                Text(
-                  widget.isLoading ? 'Loading...' : 'Load More Recordings',
-                  style: GoogleFonts.roboto(
-                    color: _isHovered ? Colors.white : const Color(0xFF115343),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ],
+            child: Icon(
+              icon,
+              size: 20,
+              color: onPressed == null ? Colors.grey[400] : const Color(0xFF115343),
             ),
           ),
         ),
@@ -1595,7 +1638,7 @@ class _RecordingRowState extends ConsumerState<_RecordingRow> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      widget.recording.title,
+                      widget.recording.title.toUpperCase(),
                       style: GoogleFonts.roboto(
                         color: const Color(0xFF115343),
                         fontWeight: FontWeight.w600,
@@ -1637,7 +1680,7 @@ class _RecordingRowState extends ConsumerState<_RecordingRow> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      widget.recording.court,
+                      widget.recording.court.toUpperCase(),
                       style: GoogleFonts.roboto(
                         color: Colors.grey[800],
                         fontWeight: FontWeight.w500,
@@ -1648,7 +1691,7 @@ class _RecordingRowState extends ConsumerState<_RecordingRow> {
                     ),
                     if (widget.recording.judgeName.isNotEmpty)
                       Text(
-                        widget.recording.judgeName,
+                        widget.recording.judgeName.toUpperCase(),
                         style: GoogleFonts.roboto(
                           color: Colors.grey[600],
                           fontSize: 12,
@@ -1773,7 +1816,8 @@ class _AssignmentCell extends StatelessWidget {
                     runSpacing: 4,
                     children: [
                       ...assignments.map((a) {
-                        final name = a.name.isNotEmpty ? a.name : a.email.split('@').first;
+                        final rawName = a.name.isNotEmpty ? a.name : a.email.split('@').first;
+                        final name = rawName.toUpperCase();
                         return Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
@@ -1874,81 +1918,193 @@ class _FilterDialogState extends State<_FilterDialog> {
   late DateTime? _fromDate = widget.filters.fromDate;
   late DateTime? _toDate = widget.filters.toDate;
 
+  void _reset() {
+    setState(() {
+      _fromDate = null;
+      _toDate = null;
+    });
+  }
+
+  void _setRange(DateTime? start, DateTime? end) {
+    setState(() {
+      _fromDate = start;
+      _toDate = end;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final weekStart = today.subtract(Duration(days: today.weekday - 1));
+
+    return Dialog(
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(24),
       ),
-      title: Text(
-        'Filters',
-        style: GoogleFonts.roboto(
-          color: const Color(0xFF115343),
-          fontWeight: FontWeight.w600,
-          fontSize: 20,
-        ),
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: _DateField(
-                  label: 'From',
-                  value: _fromDate,
-                  onChanged: (value) => setState(() => _fromDate = value),
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Filter by Date',
+                  style: GoogleFonts.roboto(
+                    color: const Color(0xFF115343),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 22,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                TextButton(
+                  onPressed: _reset,
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF115343).withOpacity(0.6),
+                  ),
+                  child: const Text('Reset'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Select a date range or use a quick shortcut.',
+              style: GoogleFonts.roboto(
+                color: Colors.grey[600],
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 24),
+            // Shortcuts
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                     _ShortcutChip(
+                      label: 'Today',
+                      onTap: () => _setRange(today, null),
+                    ),
+                    const SizedBox(width: 8),
+                    _ShortcutChip(
+                      label: 'Yesterday',
+                      onTap: () => _setRange(yesterday, today),
+                    ),
+                    const SizedBox(width: 8),
+                    _ShortcutChip(
+                      label: 'This Week',
+                      onTap: () => _setRange(weekStart, null),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _DateField(
-                  label: 'To',
-                  value: _toDate,
-                  onChanged: (value) => setState(() => _toDate = value),
+            ),
+            const SizedBox(height: 32),
+            Row(
+              children: [
+                Expanded(
+                  child: _DateField(
+                    label: 'From',
+                    value: _fromDate,
+                    onChanged: (value) => setState(() => _fromDate = value),
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _DateField(
+                    label: 'To',
+                    value: _toDate,
+                    onChanged: (value) => setState(() => _toDate = value),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 40),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      'Cancel',
+                      style: GoogleFonts.roboto(
+                        color: Colors.grey[600],
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _ModernButton(
+                    icon: Icons.check_circle_rounded,
+                    label: 'Apply Filters',
+                    color: const Color(0xFF115343),
+                    onPressed: () => Navigator.of(context).pop(
+                      RecordingFilters(
+                        court: widget.filters.court,
+                        courtroom: widget.filters.courtroom,
+                        query: widget.filters.query,
+                        fromDate: _fromDate,
+                        toDate: _toDate,
+                        tab: widget.filters.tab,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(
-            'Cancel',
-            style: GoogleFonts.roboto(
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-        FilledButton(
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF115343),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-          onPressed: () => Navigator.of(context).pop(
-            RecordingFilters(
-              court: widget.filters.court,
-              courtroom: widget.filters.courtroom,
-              query: widget.filters.query,
-              fromDate: _fromDate,
-              toDate: _toDate,
-              tab: widget.filters.tab,
+    );
+  }
+}
+
+class _ShortcutChip extends StatelessWidget {
+  const _ShortcutChip({required this.label, required this.onTap});
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFF115343).withOpacity(0.06),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: const Color(0xFF115343).withOpacity(0.1),
             ),
           ),
           child: Text(
-            'Apply',
+            label,
             style: GoogleFonts.roboto(
-              fontWeight: FontWeight.w500,
+              color: const Color(0xFF115343),
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -1966,59 +2122,114 @@ class _DateField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextButton(
-      style: TextButton.styleFrom(
-        padding: const EdgeInsets.all(12),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(
-            color: const Color(0xFF115343).withOpacity(0.3),
-          ),
-        ),
-      ),
-      onPressed: () async {
-        final now = DateTime.now();
-        final picked = await showDatePicker(
-          context: context,
-          initialDate: value ?? now,
-          firstDate: DateTime(now.year - 3),
-          lastDate: DateTime(now.year + 1),
-          builder: (context, child) {
-            return Theme(
-              data: Theme.of(context).copyWith(
-                colorScheme: const ColorScheme.light(
-                  primary: Color(0xFF115343),
-                  onPrimary: Colors.white,
-                  surface: Colors.white,
-                  onSurface: Color(0xFF115343),
-                ),
-              ),
-              child: child!,
-            );
-          },
-        );
-        onChanged(picked);
-      },
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Text(
             label,
             style: GoogleFonts.roboto(
-              fontSize: 12,
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
+              fontSize: 13,
+              color: const Color(0xFF115343).withOpacity(0.6),
+              fontWeight: FontWeight.w600,
             ),
           ),
-          Text(
-            value == null ? 'Any' : DateFormat.yMMMd().format(value!),
-            style: GoogleFonts.roboto(
-              color: const Color(0xFF115343),
-              fontWeight: FontWeight.w500,
+        ),
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () async {
+              final now = DateTime.now();
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: value ?? now,
+                firstDate: DateTime(now.year - 5),
+                lastDate: DateTime(now.year + 1),
+                builder: (context, child) {
+                  return Theme(
+                    data: Theme.of(context).copyWith(
+                      colorScheme: const ColorScheme.light(
+                        primary: Color(0xFF115343),
+                        onPrimary: Colors.white,
+                        surface: Colors.white,
+                        onSurface: Color(0xFF115343),
+                      ),
+                      datePickerTheme: DatePickerThemeData(
+                        backgroundColor: Colors.white,
+                        headerBackgroundColor: const Color(0xFF115343),
+                        headerForegroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                        dayStyle: GoogleFonts.roboto(fontWeight: FontWeight.w500),
+                        headerHeadlineStyle: GoogleFonts.roboto(
+                          fontSize: 24, 
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                        dayOverlayColor: WidgetStateProperty.all(
+                          const Color(0xFF115343).withOpacity(0.1),
+                        ),
+                        yearStyle: GoogleFonts.roboto(fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                    child: child!,
+                  );
+                },
+              );
+              onChanged(picked);
+            },
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF115343).withOpacity(0.04),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: value != null 
+                    ? const Color(0xFF115343) 
+                    : const Color(0xFF115343).withOpacity(0.1),
+                  width: value != null ? 1.5 : 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.calendar_month_rounded,
+                    size: 18,
+                    color: value != null 
+                      ? const Color(0xFF115343) 
+                      : const Color(0xFF115343).withOpacity(0.5),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      value == null ? 'Select Date' : DateFormat.yMMMd().format(value!),
+                      style: GoogleFonts.roboto(
+                        color: value != null 
+                          ? const Color(0xFF115343) 
+                          : const Color(0xFF115343).withOpacity(0.4),
+                        fontWeight: value != null ? FontWeight.w600 : FontWeight.w400,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  if (value != null)
+                    InkWell(
+                      onTap: () => onChanged(null),
+                      child: Icon(
+                        Icons.close_rounded,
+                        size: 16,
+                        color: const Color(0xFF115343).withOpacity(0.5),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
