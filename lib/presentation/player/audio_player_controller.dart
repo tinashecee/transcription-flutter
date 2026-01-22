@@ -108,14 +108,19 @@ class AudioPlayerController extends StateNotifier<AudioPlayerState> {
         _logger.warning('[AudioPlayer] Empty audio path for recording');
         return;
       }
-      _logger.info('[AudioPlayer] Loading audio: $uri');
+      _logger.info('[AudioPlayer] ═══════════════════════════════════════');
+      _logger.info('[AudioPlayer] FINAL STREAM ENDPOINT: $uri');
+      _logger.info('[AudioPlayer] Headers: ${token == null ? 'none' : 'Authorization: Bearer ***'}');
+      _logger.info('[AudioPlayer] ═══════════════════════════════════════');
       await _probeAudio(uri, token);
+      _logger.info('[AudioPlayer] Calling player.setAudioSource with URI: $uri');
       await player.setAudioSource(
         AudioSource.uri(
           uri,
           headers: token == null ? null : {'Authorization': 'Bearer $token'},
         ),
       );
+      _logger.info('[AudioPlayer] Successfully loaded audio source');
     } on MissingPluginException catch (error, stack) {
       _logger.severe('[AudioPlayer] MissingPluginException', error, stack);
       _isAvailable = false;
@@ -126,15 +131,21 @@ class AudioPlayerController extends StateNotifier<AudioPlayerState> {
         audioPath: audioPath,
       );
       if (fallbackUri != null && attempt == _loadAttempt && player != null) {
-        _logger.warning('[AudioPlayer] Retrying with MP3: $fallbackUri');
+        _logger.warning('[AudioPlayer] ═══════════════════════════════════════');
+        _logger.warning('[AudioPlayer] PRIMARY LOAD FAILED - TRYING MP3 FALLBACK');
+        _logger.warning('[AudioPlayer] FALLBACK STREAM ENDPOINT: $fallbackUri');
+        _logger.warning('[AudioPlayer] Headers: ${token == null ? 'none' : 'Authorization: Bearer ***'}');
+        _logger.warning('[AudioPlayer] ═══════════════════════════════════════');
         await _probeAudio(fallbackUri, token);
         try {
+          _logger.info('[AudioPlayer] Calling player.setAudioSource with fallback URI: $fallbackUri');
           await player.setAudioSource(
             AudioSource.uri(
               fallbackUri,
               headers: token == null ? null : {'Authorization': 'Bearer $token'},
             ),
           );
+          _logger.info('[AudioPlayer] Successfully loaded fallback MP3 audio source');
         } catch (fallbackError, fallbackStack) {
           _logger.severe(
             '[AudioPlayer] MP3 fallback failed',
@@ -275,13 +286,16 @@ class AudioPlayerController extends StateNotifier<AudioPlayerState> {
     final resolved = base.replace(
       pathSegments: [
         ...base.pathSegments.where((segment) => segment.isNotEmpty),
-        'recordings',
+        'test_stream',
         filename,
       ],
     );
     _logger.info(
-      '[AudioPlayer] buildAudioUri normalized="$normalized" filename="$filename" '
-      'resolved="$resolved"',
+      '[AudioPlayer] buildAudioUri: '
+      'input="$audioPath" -> '
+      'normalized="$normalized" -> '
+      'filename="$filename" -> '
+      'FINAL_URL="$resolved"',
     );
     return resolved;
   }
@@ -299,6 +313,7 @@ class AudioPlayerController extends StateNotifier<AudioPlayerState> {
 
   Future<void> _probeAudio(Uri uri, String? token) async {
     try {
+      _logger.info('[AudioPlayer] Probing audio at: $uri');
       final dio = Dio(
         BaseOptions(
           responseType: ResponseType.bytes,
@@ -314,12 +329,13 @@ class AudioPlayerController extends StateNotifier<AudioPlayerState> {
       }
       final response = await dio.getUri(uri, options: Options(headers: headers));
       _logger.info(
-        '[AudioPlayer] probe status=${response.statusCode} '
+        '[AudioPlayer] Probe response: status=${response.statusCode} '
         'contentType=${response.headers.value('content-type')} '
-        'contentLength=${response.headers.value('content-length')}',
+        'contentLength=${response.headers.value('content-length')} '
+        'acceptRanges=${response.headers.value('accept-ranges')}',
       );
     } catch (error, stack) {
-      _logger.warning('[AudioPlayer] probe failed', error, stack);
+      _logger.warning('[AudioPlayer] Probe failed for $uri', error, stack);
     }
   }
 }
