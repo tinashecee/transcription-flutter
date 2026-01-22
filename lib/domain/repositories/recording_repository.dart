@@ -40,5 +40,7 @@ abstract class RecordingRepository {
 
   Future<Recording> fetchRecording(String id);
 
+  Stream<String> retranscribe(String id);
+
   void clearCache();
 }

@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -1001,6 +1002,7 @@ class _SearchHeader extends StatefulWidget {
 
 class _SearchHeaderState extends State<_SearchHeader> {
   late final TextEditingController _searchController;
+  Timer? _debounce;
 
   @override
   void initState() {
@@ -1010,6 +1012,7 @@ class _SearchHeaderState extends State<_SearchHeader> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -1075,16 +1078,34 @@ class _SearchHeaderState extends State<_SearchHeader> {
                       vertical: 16,
                     ),
                   ),
-                  onSubmitted: (value) => widget.onFiltersChanged(
-                    RecordingFilters(
-                      court: widget.filters.court,
-                      courtroom: widget.filters.courtroom,
-                      query: value,
-                      fromDate: widget.filters.fromDate,
-                      toDate: widget.filters.toDate,
-                      tab: widget.filters.tab,
-                    ),
-                  ),
+                  onChanged: (value) {
+                    if (_debounce?.isActive ?? false) _debounce!.cancel();
+                    _debounce = Timer(const Duration(milliseconds: 500), () {
+                      widget.onFiltersChanged(
+                        RecordingFilters(
+                          court: widget.filters.court,
+                          courtroom: widget.filters.courtroom,
+                          query: value,
+                          fromDate: widget.filters.fromDate,
+                          toDate: widget.filters.toDate,
+                          tab: widget.filters.tab,
+                        ),
+                      );
+                    });
+                  },
+                  onSubmitted: (value) {
+                    if (_debounce?.isActive ?? false) _debounce!.cancel();
+                    widget.onFiltersChanged(
+                      RecordingFilters(
+                        court: widget.filters.court,
+                        courtroom: widget.filters.courtroom,
+                        query: value,
+                        fromDate: widget.filters.fromDate,
+                        toDate: widget.filters.toDate,
+                        tab: widget.filters.tab,
+                      ),
+                    );
+                  },
                 ),
               ),
             ),

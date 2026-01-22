@@ -35,32 +35,55 @@ class _CommentsPanelState extends ConsumerState<CommentsPanel> {
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton.icon(
-      icon: const Icon(Icons.chat_bubble_outline, size: 18),
-      label: Text(
-        'Comments',
-        style: GoogleFonts.roboto(fontWeight: FontWeight.w600),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF115343).withOpacity(0.2),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      style: FilledButton.styleFrom(
-        backgroundColor: const Color(0xFF115343),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        minimumSize: const Size(0, 0),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(999),
+      child: Material(
+        color: const Color(0xFF115343),
+        borderRadius: BorderRadius.circular(30),
+        child: InkWell(
+          onTap: () async {
+            await showModalBottomSheet<void>(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (context) => _CommentsModal(
+                controller: _controller,
+                commentType: _commentType,
+                onTypeChanged: (value) => setState(() => _commentType = value),
+              ),
+            );
+          },
+          borderRadius: BorderRadius.circular(30),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.chat_bubble_outline_rounded, size: 20, color: Colors.white),
+                const SizedBox(width: 8),
+                Text(
+                  'Comments',
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
-      onPressed: () async {
-        await showModalBottomSheet<void>(
-          context: context,
-          isScrollControlled: true,
-          backgroundColor: Colors.transparent,
-          builder: (context) => _CommentsModal(
-            controller: _controller,
-            commentType: _commentType,
-            onTypeChanged: (value) => setState(() => _commentType = value),
-          ),
-        );
-      },
     );
   }
 }
@@ -80,68 +103,119 @@ class _CommentsModal extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(commentsControllerProvider);
     return DraggableScrollableSheet(
-      initialChildSize: 0.6,
-      minChildSize: 0.4,
-      maxChildSize: 0.9,
+      initialChildSize: 0.65,
+      minChildSize: 0.45,
+      maxChildSize: 0.92,
       builder: (context, scrollController) {
         return Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.15),
+                blurRadius: 24,
+                spreadRadius: 2,
+                offset: const Offset(0, -4),
+              ),
+            ],
           ),
           child: Column(
             children: [
+              // Drag Handle
               Container(
-                margin: const EdgeInsets.only(top: 8),
-                width: 42,
-                height: 4,
+                margin: const EdgeInsets.only(top: 12),
+                width: 48,
+                height: 5,
                 decoration: BoxDecoration(
-                  color: Colors.grey[400],
+                  color: Colors.grey.shade300,
                   borderRadius: BorderRadius.circular(999),
                 ),
               ),
+              
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
                 child: Row(
                   children: [
                     Text(
                       'Comments',
-                      style: GoogleFonts.roboto(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF115343),
+                      style: GoogleFonts.inter(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF111827),
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF115343).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${state.items.length}',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF115343),
+                        ),
                       ),
                     ),
                     const Spacer(),
-                    DropdownButton<String>(
-                      value: commentType,
-                      underline: const SizedBox.shrink(),
-                      items: const [
-                        'general',
-                        'correction',
-                        'question',
-                        'feedback',
-                        'urgent',
-                      ]
-                          .map(
-                            (value) => DropdownMenuItem(
-                              value: value,
-                              child: Text(_labelForType(value)),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        if (value != null) onTypeChanged(value);
-                      },
+                    
+                    // Custom Dropdown
+                    Container(
+                      height: 36,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: commentType,
+                          icon: Icon(Icons.keyboard_arrow_down_rounded, 
+                              size: 18, color: Colors.grey.shade600),
+                          isDense: true,
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF374151),
+                          ),
+                          dropdownColor: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          elevation: 4,
+                          items: const [
+                            'general',
+                            'correction',
+                            'question',
+                            'feedback',
+                            'urgent',
+                          ].map((value) => DropdownMenuItem(
+                                value: value,
+                                child: Text(_labelForType(value)),
+                              )).toList(),
+                          onChanged: (value) {
+                            if (value != null) onTypeChanged(value);
+                          },
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ),
+              
+              const Divider(height: 1, color: Color(0xFFF3F4F6)),
+
               Expanded(
                 child: state.items.isEmpty
                     ? const _EmptyComments()
-                    : ListView.builder(
+                    : ListView.separated(
                         controller: scrollController,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        separatorBuilder: (context, index) => const SizedBox(height: 12),
                         itemCount: state.items.length,
                         itemBuilder: (context, index) {
                           final comment = state.items[index];
@@ -149,49 +223,103 @@ class _CommentsModal extends ConsumerWidget {
                         },
                       ),
               ),
+              
               if (state.errorMessage != null)
                 Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Text(
-                    state.errorMessage!,
-                    style: GoogleFonts.roboto(
-                      color: Colors.redAccent,
-                      fontWeight: FontWeight.w500,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red.shade100),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline, size: 16, color: Colors.red),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            state.errorMessage!,
+                            style: GoogleFonts.inter(
+                              color: Colors.red.shade700,
+                              fontWeight: FontWeight.w500,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+
+              // Input Area
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      offset: const Offset(0, -4),
+                      blurRadius: 16,
+                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Expanded(
-                      child: TextField(
-                        controller: controller,
-                        maxLines: 2,
-                        decoration: InputDecoration(
-                          hintText: 'Type a comment...',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        constraints: const BoxConstraints(minHeight: 44, maxHeight: 120),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(22),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: TextField(
+                          controller: controller,
+                          maxLines: null,
+                          keyboardType: TextInputType.multiline,
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            color: const Color(0xFF111827),
                           ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
+                          decoration: InputDecoration(
+                            hintText: 'Type a comment...',
+                            hintStyle: GoogleFonts.inter(
+                              color: Colors.grey.shade400,
+                              fontSize: 14,
+                            ),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            isDense: true,
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    IconButton.filled(
-                      onPressed: () async {
-                        final text = controller.text.trim();
-                        if (text.isEmpty) return;
-                        await ref
-                            .read(commentsControllerProvider.notifier)
-                            .addComment(text, commentType);
-                        controller.clear();
-                      },
-                      icon: const Icon(Icons.send),
+                    const SizedBox(width: 12),
+                    Material(
+                      color: const Color(0xFF115343),
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        onTap: () async {
+                          final text = controller.text.trim();
+                          if (text.isEmpty) return;
+                          await ref
+                              .read(commentsControllerProvider.notifier)
+                              .addComment(text, commentType);
+                          controller.clear();
+                        },
+                        customBorder: const CircleBorder(),
+                        child: const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                        ),
+                      ),
                     ),
                   ],
                 ),

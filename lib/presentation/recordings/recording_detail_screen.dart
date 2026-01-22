@@ -90,6 +90,50 @@ class _RecordingDetailScreenState
     super.dispose();
   }
 
+  Future<void> _handleRetranscribe(BuildContext context, Recording recording) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Retranscribe?'),
+        content: const Text(
+          'This will restart the transcription process. The current transcript will be overwritten.\n\nAre you sure you want to proceed?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF115343),
+            ),
+            child: const Text('Retranscribe'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    if (!mounted) return;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => _RetranscribeDialog(
+        recordingId: recording.id.toString(),
+      ),
+    );
+    // Update status in list cache so detail provider patch sees it
+    ref.read(recordingsControllerProvider.notifier).updateRecordingStatus(widget.recordingId, 'pending');
+    
+    // Refresh after dialog closes (on success)
+    ref.invalidate(recordingDetailProvider(widget.recordingId));
+    // Also reload the transcript editor content
+    ref.read(transcriptControllerProvider.notifier).load(widget.recordingId);
+  }
+
   String _formatTimeAgo(String? timestamp) {
     if (timestamp == null || timestamp.isEmpty) return '';
     try {
@@ -169,6 +213,16 @@ class _RecordingDetailScreenState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Loading Indicator for background refresh
+                  if (recordingAsync.isLoading && recording != null)
+                     const Padding(
+                       padding: EdgeInsets.only(bottom: 16),
+                       child: LinearProgressIndicator(
+                         minHeight: 2,
+                         backgroundColor: Colors.transparent,
+                         valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF115343)),
+                       ),
+                     ),
                   // Back Button
                   Padding(
                     padding: const EdgeInsets.only(bottom: 24),
@@ -494,90 +548,6 @@ class _RecordingDetailScreenState
                                     // Controls Section
                                     if (isAssignedToMe) ...[
                                       // Save Button
-                                      if (_isEditMode) // Only show Save button in Edit Mode
-                                          Theme(
-                                            data: Theme.of(context).copyWith(
-                                              filledButtonTheme: FilledButtonThemeData(
-                                                style: FilledButton.styleFrom(
-                                                  backgroundColor: const Color(0xFF115343),
-                                                  foregroundColor: Colors.white,
-                                                ),
-                                              ),
-                                            ),
-                                            child: Consumer(
-                                              builder: (context, ref, child) {
-                                                final state = ref.watch(transcriptControllerProvider);
-                                                return FilledButton.icon(
-                                                  onPressed: state.isSaving 
-                                                      ? null 
-                                                      : () async {
-                                                          bool markAsCompleted = false;
-                                                          
-                                                          // Only show dialog if not already completed
-                                                          final currentStatus = recording.status?.toLowerCase() ?? 'pending';
-                                                          if (['pending', 'in_progress'].contains(currentStatus)) {
-                                                            final confirmed = await showDialog<bool>(
-                                                              context: context,
-                                                              builder: (context) => _SaveConfirmationDialog(
-                                                                currentStatus: recording.status,
-                                                                onMarkCompletedChanged: (val) => markAsCompleted = val,
-                                                              ),
-                                                            );
-                                                            if (confirmed != true) return;
-                                                          }
-
-                                                          final success = await ref.read(transcriptControllerProvider.notifier).save();
-                                                          
-                                                          if (success && markAsCompleted) {
-                                                            try {
-                                                              await ref.read(statusRepositoryProvider).updateStatus(
-                                                                recordingId: widget.recordingId,
-                                                                status: 'completed',
-                                                              );
-                                                              ref.read(recordingsControllerProvider.notifier).updateRecordingStatus(widget.recordingId, 'completed');
-                                                              ref.invalidate(recordingDetailProvider(widget.recordingId));
-                                                            } catch (e) {
-                                                              if (context.mounted) {
-                                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                                  SnackBar(content: Text('Transcript saved, but failed to update status: $e')),
-                                                                );
-                                                              }
-                                                            }
-                                                          }
-
-                                                          if (context.mounted) {
-                                                            ScaffoldMessenger.of(context).showSnackBar(
-                                                              SnackBar(
-                                                                content: Row(
-                                                                  children: [
-                                                                    Icon(success ? Icons.check_circle : Icons.error, color: Colors.white, size: 20),
-                                                                    const SizedBox(width: 8),
-                                                                    Text(success 
-                                                                      ? (markAsCompleted ? 'Saved & Marked as Completed' : 'Saved successfully') 
-                                                                      : 'Save failed'),
-                                                                  ],
-                                                                ),
-                                                                backgroundColor: success ? const Color(0xFF115343) : Colors.red,
-                                                                behavior: SnackBarBehavior.floating,
-                                                                width: 320,
-                                                              ),
-                                                            );
-                                                          }
-                                                        },
-                                                  icon: state.isSaving 
-                                                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                                      : const Icon(Icons.save, size: 16),
-                                                  label: Text(state.isSaving ? 'Saving' : 'Save'),
-                                                  style: FilledButton.styleFrom(
-                                                    backgroundColor: const Color(0xFF115343),
-                                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                                    minimumSize: const Size(0, 36),
-                                                    textStyle: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w500),
-                                                  ),
-                                                );
-                                              },
-                                            ),
-                                          ),
                                       const SizedBox(width: 8),
                                       const SizedBox(height: 24, child: VerticalDivider(width: 24)),
 
@@ -634,10 +604,70 @@ class _RecordingDetailScreenState
                                             ),
                                           ),
                                           child: InkWell(
-                                            onTap: () {
-                                              // If we are IN edit mode and clicking "Done", we could auto-save, 
-                                              // but for now we just toggle the mode. The user can hit Save manually.
-                                              setState(() => _isEditMode = !_isEditMode);
+                                            onTap: () async {
+                                              if (_isEditMode) {
+                                                  // 'Done' clicked - Process Save
+                                                  bool markAsCompleted = false;
+                                                  
+                                                  // Only show dialog if not already completed
+                                                  final currentStatus = recording.status?.toLowerCase() ?? 'pending';
+                                                  if (['pending', 'in_progress'].contains(currentStatus)) {
+                                                    final confirmed = await showDialog<bool>(
+                                                      context: context,
+                                                      builder: (context) => _SaveConfirmationDialog(
+                                                        currentStatus: recording.status,
+                                                        onMarkCompletedChanged: (val) => markAsCompleted = val,
+                                                      ),
+                                                    );
+                                                    if (confirmed != true) return;
+                                                  }
+
+                                                  final success = await ref.read(transcriptControllerProvider.notifier).save();
+                                                  
+                                                  if (success && markAsCompleted) {
+                                                    try {
+                                                      await ref.read(statusRepositoryProvider).updateStatus(
+                                                        recordingId: widget.recordingId,
+                                                        status: 'completed',
+                                                      );
+                                                      ref.read(recordingsControllerProvider.notifier).updateRecordingStatus(widget.recordingId, 'completed');
+                                                      ref.invalidate(recordingDetailProvider(widget.recordingId));
+                                                    } catch (e) {
+                                                      if (context.mounted) {
+                                                        ScaffoldMessenger.of(context).showSnackBar(
+                                                          SnackBar(content: Text('Transcript saved, but failed to update status: $e')),
+                                                        );
+                                                      }
+                                                    }
+                                                  }
+
+                                                  if (context.mounted) {
+                                                    ScaffoldMessenger.of(context).showSnackBar(
+                                                      SnackBar(
+                                                        content: Row(
+                                                          children: [
+                                                            Icon(success ? Icons.check_circle : Icons.error, color: Colors.white, size: 20),
+                                                            const SizedBox(width: 8),
+                                                            Text(success 
+                                                              ? (markAsCompleted ? 'Saved & Marked as Completed' : 'Saved successfully') 
+                                                              : 'Save failed'),
+                                                          ],
+                                                        ),
+                                                        backgroundColor: success ? const Color(0xFF115343) : Colors.red,
+                                                        behavior: SnackBarBehavior.floating,
+                                                        width: 320,
+                                                      ),
+                                                    );
+                                                    
+                                                    // Only exit edit mode on success
+                                                    if (success) {
+                                                      setState(() => _isEditMode = false);
+                                                    }
+                                                  }
+                                              } else {
+                                                // 'Edit' clicked - Toggle mode
+                                                setState(() => _isEditMode = true);
+                                              }
                                             },
                                             borderRadius: BorderRadius.circular(8),
                                             child: Padding(
@@ -776,7 +806,10 @@ class _RecordingDetailScreenState
                                           ),
                                         MenuItemButton(
                                           leadingIcon: const Icon(Icons.sync, size: 18, color: Color(0xFF115343)),
-                                          onPressed: () => ref.refresh(recordingDetailProvider(widget.recordingId)),
+                                          onPressed: () {
+                                            ref.invalidate(recordingDetailProvider(widget.recordingId));
+                                            ref.read(transcriptControllerProvider.notifier).load(widget.recordingId);
+                                          },
                                           child: Text(
                                             'Refresh Data',
                                             style: GoogleFonts.roboto(
@@ -1020,38 +1053,6 @@ class _RecordingDetailScreenState
     return delta.toString();
   }
 
-  Future<void> _handleRetranscribe(BuildContext context, Recording recording) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Retranscribe?'),
-        content: const Text('This will overwrite the current transcript. Are you sure?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Retranscribe')),
-        ],
-      ),
-    );
-
-    if (confirm == true) {
-      try {
-        final client = ref.read(apiClientProvider).dio;
-        await client.post('/case_recordings/${recording.id}/retranscribe');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Retranscription started')),
-          );
-          _loadTranscriptionStatus(recording.id, poll: true);
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to start retranscription: $e')),
-          );
-        }
-      }
-    }
-  }
 }
 
 class _AnnotationsList extends StatelessWidget {
@@ -1336,3 +1337,143 @@ class _SaveConfirmationDialogState extends State<_SaveConfirmationDialog> {
     );
   }
 }
+
+class _RetranscribeDialog extends ConsumerStatefulWidget {
+  final String recordingId;
+
+  const _RetranscribeDialog({required this.recordingId});
+
+  @override
+  ConsumerState<_RetranscribeDialog> createState() => _RetranscribeDialogState();
+}
+
+class _RetranscribeDialogState extends ConsumerState<_RetranscribeDialog> {
+  String _statusMessage = 'Initializing...';
+  String _transcriptPreview = '';
+  bool _isComplete = false;
+  bool _hasError = false;
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _startRetranscription();
+  }
+
+  void _startRetranscription() {
+    final stream = ref.read(recordingRepositoryProvider).retranscribe(widget.recordingId);
+    stream.listen(
+      (data) {
+        if (!mounted) return;
+        setState(() {
+          if (data.startsWith('[Status]') || 
+              data.startsWith('[Queue]') || 
+              data.startsWith('[Backend]') ||
+              data.startsWith('[Error]')) {
+            _statusMessage = data;
+            if (data.startsWith('[Error]')) {
+              _hasError = true;
+            }
+          } else {
+             // It's the transcript content!
+             _isComplete = true;
+             _statusMessage = '✓ Retranscription Complete';
+             _transcriptPreview = data; // Could be large
+          }
+        });
+      },
+      onError: (e) {
+        if (!mounted) return;
+        setState(() {
+          _hasError = true;
+          _statusMessage = 'Error: $e';
+        });
+      },
+      onDone: () {
+        if (!mounted) return;
+        setState(() {
+          _isComplete = true;
+        });
+        // Auto-close after short delay to show success
+        Future.delayed(const Duration(milliseconds: 1500), () {
+          if (mounted) {
+            Navigator.pop(context);
+          }
+        });
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Retranscribing...', style: GoogleFonts.roboto(fontWeight: FontWeight.bold)),
+      content: SizedBox(
+        width: 500,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+             Container(
+               padding: const EdgeInsets.all(12),
+               decoration: BoxDecoration(
+                 color: _hasError ? Colors.red.shade50 : (_isComplete ? Colors.green.shade50 : Colors.blue.shade50),
+                 borderRadius: BorderRadius.circular(8),
+                 border: Border.all(
+                   color: _hasError ? Colors.red.shade200 : (_isComplete ? Colors.green.shade200 : Colors.blue.shade200)
+                 )
+               ),
+               child: Row(
+                 children: [
+                    if (_hasError) const Icon(Icons.error_outline, color: Colors.red)
+                    else if (_isComplete) const Icon(Icons.check_circle_outline, color: Colors.green)
+                    else const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _statusMessage,
+                        style: GoogleFonts.roboto(
+                          color: _hasError ? Colors.red.shade900 : Colors.black87,
+                          fontSize: 14, 
+                          fontWeight: FontWeight.w500
+                        ),
+                      ),
+                    ),
+                 ],
+               ),
+             ),
+             if (_isComplete) ...[
+               const SizedBox(height: 16),
+               const Text('Preview:', style: TextStyle(fontWeight: FontWeight.bold)),
+               const SizedBox(height: 8),
+               Container(
+                 height: 150,
+                 padding: const EdgeInsets.all(8),
+                 decoration: BoxDecoration(
+                   border: Border.all(color: Colors.grey.shade300),
+                   borderRadius: BorderRadius.circular(4),
+                   color: Colors.grey.shade50,
+                 ),
+                 child: SingleChildScrollView(
+                   controller: _scrollController,
+                   child: Text(
+                     _transcriptPreview,
+                     style: GoogleFonts.robotoMono(fontSize: 11),
+                   ),
+                 ),
+               ),
+             ]
+          ],
+        ),
+      ),
+      actions: [
+        if (_hasError || _isComplete)
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+      ],
+    );
+  }
+}
+

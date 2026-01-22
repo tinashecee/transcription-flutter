@@ -193,4 +193,161 @@ class RecordingRepositoryImpl implements RecordingRepository {
     _courtsCache = null;
     _courtroomsByCourtCache = null;
   }
+
+  @override
+  Stream<String> retranscribe(String id) async* {
+    yield '[Status] Starting retranscription...';
+    
+    try {
+      // 1. Initiate retranscription
+      final response = await _client.dio.post<dynamic>(
+        '/retranscribe',
+        data: {'id': id},
+        options: Options(
+          contentType: Headers.formUrlEncodedContentType,
+          responseType: ResponseType.json, 
+        ),
+      );
+
+      final data = response.data;
+      
+      // 2. Handle response
+      if (data is Map<String, dynamic>) {
+        if (data['job_id'] != null || data['queued'] == true) {
+          yield '[Queue] 📥 Job queued. Waiting for position...';
+          final jobId = data['job_id'] as int?;
+          
+          if (jobId != null) {
+            yield* _pollTranscriptionStatus(id, jobId);
+          }
+        } else if (data['message'] != null) {
+           yield '[Backend]: ${data['message']}';
+        } else if (data['transcript'] != null) {
+           // Immediate result
+           yield data['transcript'].toString();
+           return;
+        }
+      } else {
+        // Unexpected response format
+        yield '[Error] Unexpected response format from backend.';
+      }
+      
+    } on DioException catch (e) {
+      yield '[Error] Request failed: ${e.message}';
+      if (e.response != null) {
+        yield '[Error] Backend details: ${e.response?.data}';
+      }
+      rethrow;
+    } catch (e) {
+      yield '[Error] $e';
+      rethrow;
+    }
+  }
+
+  Stream<String> _pollTranscriptionStatus(String recordingId, int expectedJobId) async* {
+    const maxPolls = 120; // 10 minutes
+    const pollInterval = Duration(seconds: 4);
+    
+    int lastQueuePosition = -1;
+    bool shownRunningMessage = false;
+
+    // We can't use a regular for loop with async* efficiently if we want delays?
+    // Actually we can await Future.delayed.
+    
+    for (var i = 0; i < maxPolls; i++) {
+      try {
+        final response = await _client.dio.get<Map<String, dynamic>>(
+          '/case_recordings/$recordingId/transcription_status',
+        );
+        
+        final status = response.data;
+        if (status == null) continue;
+
+        // Check last_job
+        final lastJob = status['last_job'];
+        if (lastJob != null && lastJob['id'] == expectedJobId) {
+          final jobStatus = lastJob['status'];
+          
+          if (jobStatus == 'completed') {
+            yield '\n[Queue] ✅ Transcription completed!';
+            
+            // Fetch updated recording to ensure backend is ready
+            try {
+              await fetchRecording(recordingId);
+            } catch (e) {
+              print('Failed to fetch updated recording: $e');
+            }
+            
+            if (lastJob['transcript'] != null) {
+              yield lastJob['transcript'].toString();
+              return;
+            }
+            // If we completed but got no transcript, just return what we have or nothing?
+            // The stream closing marks the end.
+            return;
+            
+          } else if (jobStatus == 'failed') {
+            yield '\n[Queue] ❌ Transcription failed: ${lastJob['error_message'] ?? "Unknown error"}';
+            return;
+          } else if (jobStatus == 'running' && !shownRunningMessage) {
+            yield '\n[Queue] 🎉 Now your turn! Transcription in progress...';
+            shownRunningMessage = true;
+          }
+        }
+
+        // Check active active_jobs
+        final activeJobs = status['active_jobs'] as List?;
+        if (activeJobs != null && activeJobs.isNotEmpty) {
+           // Find our job or fallback to first
+           // The web code tries to find exact job ID
+           final jobMatch = activeJobs.firstWhere(
+             (j) => j['id'] == expectedJobId, 
+             orElse: () => null,
+           );
+           
+           if (jobMatch != null) {
+             final activeJob = jobMatch;
+             final queuePosition = activeJob['queue_position'] as int?;
+             final jobStatus = activeJob['status'];
+             
+             final isActuallyRunning = jobStatus == 'running' && 
+                 (queuePosition == null || queuePosition <= 1);
+
+             if (isActuallyRunning) {
+               if (!shownRunningMessage) {
+                 yield '\n[Queue] 🎉 Now your turn! Transcription in progress...';
+                 shownRunningMessage = true;
+               }
+               // Periodically show progress dots
+               if (i > 0 && i % 3 == 0) yield '.';
+               
+             } else if (queuePosition != null && queuePosition > 0) {
+               if (queuePosition != lastQueuePosition) {
+                 lastQueuePosition = queuePosition;
+                 yield '\n[Queue] 📋 You are in queue position $queuePosition. Please be patient...';
+               }
+             } else {
+                if (lastQueuePosition != -2) {
+                  lastQueuePosition = -2;
+                  yield '\n[Queue] 📋 Waiting in queue...';
+                }
+             }
+           }
+        } else if (status['active_jobs_count'] == 0 && lastJob != null && lastJob['id'] == expectedJobId) {
+             // Fallback if active_jobs is empty but last_job is ours and completed/failed
+             // This logic was covered in the first last_job check, but let's double check logic order.
+             // The web logic checks active_jobs first, then last_job if active is empty.
+             // We checked last_job first. That's probably fine as last_job is definitive for completion.
+        }
+        
+      } catch (e) {
+        print('Poll error: $e');
+        // Continue polling despite temporary network errors
+      }
+
+      await Future.delayed(pollInterval);
+    }
+    
+    yield '[Error] Transcription timed out.';
+  }
 }
