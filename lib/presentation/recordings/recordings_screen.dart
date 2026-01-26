@@ -212,23 +212,28 @@ class _RecordingsScreenState extends ConsumerState<RecordingsScreen> {
                 onCourtSelected: (court) => controller.updateFilters(
                   RecordingFilters(
                     court: court,
-                    courtroom: null, // Clear courtroom when changing court
+                    courtroom: null, // Clearing court also clears courtroom
                     query: state.filters.query,
                     fromDate: state.filters.fromDate,
                     toDate: state.filters.toDate,
                     tab: state.filters.tab,
                   ),
                 ),
-                onCourtroomSelected: (courtroom) => controller.updateFilters(
-                  RecordingFilters(
-                    court: state.filters.court,
-                    courtroom: courtroom,
-                    query: state.filters.query,
-                    fromDate: state.filters.fromDate,
-                    toDate: state.filters.toDate,
-                    tab: state.filters.tab,
-                  ),
-                ),
+                onCourtroomSelected: (courtroom) {
+                  // When courtroom is selected, we need both court and courtroom
+                  // The court value is passed from the dropdown, so we update both together
+                  // This is handled in the dropdown callback itself
+                  controller.updateFilters(
+                    RecordingFilters(
+                      court: state.filters.court, // Keep existing court
+                      courtroom: courtroom,
+                      query: state.filters.query,
+                      fromDate: state.filters.fromDate,
+                      toDate: state.filters.toDate,
+                      tab: state.filters.tab,
+                    ),
+                  );
+                },
               ),
             ),
 
@@ -399,20 +404,64 @@ class _RecordingTileState extends ConsumerState<_RecordingTile> {
       print('[RecordingsScreen] API error: $e');
       if (mounted) {
         String errorMessage = 'Failed to add to list';
+        
         if (e is DioException) {
+          final statusCode = e.response?.statusCode;
           final responseData = e.response?.data;
-          if (responseData is Map) {
-            errorMessage = responseData['message']?.toString() ?? 
-                          responseData['error']?.toString() ?? 
-                          errorMessage;
-          } else if (responseData is String) {
-            errorMessage = responseData;
+          
+          // Check for duplicate/conflict errors (400 or 409)
+          if (statusCode == 400 || statusCode == 409) {
+            // Check if it's a duplicate error
+            String? apiMessage;
+            if (responseData is Map) {
+              apiMessage = responseData['message']?.toString() ?? 
+                          responseData['error']?.toString();
+            } else if (responseData is String) {
+              apiMessage = responseData;
+            }
+            
+            // Check if the message indicates a duplicate
+            final messageLower = (apiMessage ?? '').toLowerCase();
+            if (messageLower.contains('duplicate') || 
+                messageLower.contains('already') || 
+                messageLower.contains('exists') ||
+                messageLower.contains('already assigned')) {
+              errorMessage = 'This case is already in your list';
+            } else if (apiMessage != null && apiMessage.isNotEmpty) {
+              // Use the API message if it's short and clear
+              errorMessage = apiMessage.length > 100 
+                  ? 'This case is already in your list'
+                  : apiMessage;
+            } else {
+              errorMessage = 'This case is already in your list';
+            }
           } else {
-            errorMessage = e.response?.statusMessage ?? errorMessage;
+            // For other errors, try to extract a clean message
+            if (responseData is Map) {
+              final apiMessage = responseData['message']?.toString() ?? 
+                                responseData['error']?.toString();
+              if (apiMessage != null && apiMessage.isNotEmpty) {
+                // Only use if it's a reasonable length
+                errorMessage = apiMessage.length > 150 
+                    ? 'Failed to add to list. Please try again.'
+                    : apiMessage;
+              }
+            } else if (responseData is String && responseData.length <= 150) {
+              errorMessage = responseData;
+            } else {
+              errorMessage = 'Failed to add to list. Please try again.';
+            }
           }
         }
+        
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMessage)),
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: errorMessage.contains('already') 
+                ? Colors.orange.shade700 
+                : Colors.red.shade700,
+            duration: const Duration(seconds: 3),
+          ),
         );
       }
     } finally {
@@ -1439,11 +1488,11 @@ class _CourtFilterSidebar extends ConsumerStatefulWidget {
 
 class _CourtFilterSidebarState extends ConsumerState<_CourtFilterSidebar> {
   String? _selectedLetter;
-  bool _isExpanded = false;
   bool _isLoading = true;
   String? _errorMessage;
   List<String> _courts = [];
   Map<String, List<String>> _courtroomsByCourt = {};
+  final Map<String, GlobalKey> _courtKeys = {};
 
   @override
   void initState() {
@@ -1465,6 +1514,11 @@ class _CourtFilterSidebarState extends ConsumerState<_CourtFilterSidebar> {
       ]);
       _courts = (results[0] as List<String>)..sort();
       _courtroomsByCourt = results[1] as Map<String, List<String>>;
+      print('[CourtFilter] Loaded ${_courts.length} courts');
+      print('[CourtFilter] Courtrooms by court: ${_courtroomsByCourt.keys.length} courts have courtrooms');
+      for (final entry in _courtroomsByCourt.entries) {
+        print('[CourtFilter] Court "${entry.key}": ${entry.value.length} courtrooms');
+      }
       if (!mounted) return;
       setState(() => _isLoading = false);
     } catch (error) {
@@ -1641,7 +1695,7 @@ class _CourtFilterSidebarState extends ConsumerState<_CourtFilterSidebar> {
           ),
           child: Text(
             _selectedLetter != null
-                ? 'Click court to select courtroom'
+                ? 'Click court to select a courtroom'
                 : 'Select a letter to browse courts',
             style: GoogleFonts.roboto(
               fontSize: 11,
@@ -1657,168 +1711,263 @@ class _CourtFilterSidebarState extends ConsumerState<_CourtFilterSidebar> {
 
   int _getListItemCount() {
     if (_selectedLetter == null) return 0;
-
-    int count = _filteredCourts.length;
-    // Add courtroom items for the selected court if expanded
-    if (widget.selectedCourt != null && _isExpanded && _getCourtrooms(widget.selectedCourt!).isNotEmpty) {
-      count += 1 + _getCourtrooms(widget.selectedCourt!).length; // +1 for "All Courtrooms" option
-    }
-    return count;
+    return _filteredCourts.length;
   }
 
   Widget _buildListItem(BuildContext context, int index) {
     final courts = _filteredCourts;
-    int currentIndex = 0;
-
-    // Find which section this index belongs to
-    for (int courtIndex = 0; courtIndex < courts.length; courtIndex++) {
-      final court = courts[courtIndex];
-      final isSelectedCourt = widget.selectedCourt == court;
-      final courtrooms = _getCourtrooms(court);
-
-      // Court item
-      if (currentIndex == index) {
-        return _buildCourtItem(court, isSelectedCourt, courtrooms.isNotEmpty);
-      }
-      currentIndex++;
-
-      // Courtroom items (if this court is selected and expanded)
-      if (isSelectedCourt && _isExpanded && courtrooms.isNotEmpty) {
-        // "All Courtrooms" option
-        if (currentIndex == index) {
-          return _buildCourtroomItem('All Courtrooms', widget.selectedCourtroom == null, true);
-        }
-        currentIndex++;
-
-        // Individual courtrooms
-        for (int roomIndex = 0; roomIndex < courtrooms.length; roomIndex++) {
-          if (currentIndex == index) {
-            final courtroom = courtrooms[roomIndex];
-            final isLastRoom = roomIndex == courtrooms.length - 1;
-            return _buildCourtroomItem(courtroom, widget.selectedCourtroom == courtroom, false, isLastRoom);
-          }
-          currentIndex++;
-        }
-      }
-    }
-
-    return const SizedBox.shrink();
+    if (index >= courts.length) return const SizedBox.shrink();
+    
+    final court = courts[index];
+    final isSelectedCourt = widget.selectedCourt == court;
+    final courtrooms = _getCourtrooms(court);
+    
+    return _buildCourtItem(court, isSelectedCourt, courtrooms.isNotEmpty);
   }
 
-  Widget _buildCourtItem(String court, bool isSelected, bool hasCourtrooms) {
-    return InkWell(
-      onTap: () {
-        if (isSelected) {
-          setState(() => _isExpanded = !_isExpanded);
-        } else {
-          widget.onCourtSelected(court);
-          if (hasCourtrooms) {
-            setState(() => _isExpanded = true);
-          }
-        }
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? const Color(0xFF115343).withOpacity(0.08)
-              : null,
-          border: Border(
-            bottom: BorderSide(
-              color: Colors.grey.withOpacity(0.1),
-              width: 1,
-            ),
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.account_balance,
-              size: 18,
-              color: isSelected
-                  ? const Color(0xFF115343)
-                  : Colors.grey[600],
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                court,
+  Future<void> _showCourtroomDropdown(BuildContext context, String court, GlobalKey key) async {
+    final courtrooms = _getCourtrooms(court);
+    print('[CourtFilter] Showing dropdown for court: $court, courtrooms: ${courtrooms.length}');
+    if (courtrooms.isEmpty) {
+      print('[CourtFilter] No courtrooms for court: $court');
+      // No courtrooms, do nothing
+      return;
+    }
+
+    // Get the position of the court item
+    final RenderBox? renderBox = key.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) {
+      print('[CourtFilter] Could not get render box for court: $court');
+      return;
+    }
+    print('[CourtFilter] Render box found, position: ${renderBox.localToGlobal(Offset.zero)}');
+
+    final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final Offset position = renderBox.localToGlobal(Offset.zero);
+
+    // Show menu below the court item
+    final selected = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx, // Left edge of court item
+        position.dy + renderBox.size.height, // Below the court item
+        overlay.size.width - position.dx, // Right edge
+        overlay.size.height - position.dy - renderBox.size.height, // Bottom
+      ),
+      items: [
+        // "All Courtrooms" option
+        PopupMenuItem<String>(
+          value: '__all__',
+          child: Row(
+            children: [
+              Icon(
+                Icons.clear_all,
+                size: 18,
+                color: widget.selectedCourtroom == null
+                    ? const Color(0xFF115343)
+                    : Colors.grey[600],
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'All Courtrooms',
                 style: GoogleFonts.roboto(
                   fontSize: 14,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                  color: isSelected
+                  fontWeight: widget.selectedCourtroom == null
+                      ? FontWeight.w600
+                      : FontWeight.w400,
+                  color: widget.selectedCourtroom == null
                       ? const Color(0xFF115343)
                       : Colors.grey[800],
                 ),
               ),
-            ),
-            if (hasCourtrooms)
-              Icon(
-                isSelected
-                    ? (_isExpanded ? Icons.expand_less : Icons.expand_more)
-                    : Icons.chevron_right,
-                size: 18,
-                color: const Color(0xFF115343).withOpacity(0.6),
-              ),
-            if (isSelected && !hasCourtrooms)
-              Icon(
-                Icons.check,
-                size: 18,
-                color: const Color(0xFF115343),
-              ),
-          ],
+              if (widget.selectedCourtroom == null) ...[
+                const Spacer(),
+                Icon(
+                  Icons.check,
+                  size: 18,
+                  color: const Color(0xFF115343),
+                ),
+              ],
+            ],
+          ),
         ),
+        const PopupMenuDivider(),
+        // Individual courtrooms
+        ...courtrooms.map((courtroom) {
+          final isSelected = widget.selectedCourtroom == courtroom;
+          return PopupMenuItem<String>(
+            value: courtroom,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.meeting_room,
+                  size: 18,
+                  color: isSelected
+                      ? const Color(0xFF115343)
+                      : Colors.grey[600],
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    courtroom,
+                    style: GoogleFonts.roboto(
+                      fontSize: 14,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                      color: isSelected
+                          ? const Color(0xFF115343)
+                          : Colors.grey[800],
+                    ),
+                  ),
+                ),
+                if (isSelected)
+                  Icon(
+                    Icons.check,
+                    size: 18,
+                    color: const Color(0xFF115343),
+                  ),
+              ],
+            ),
+          );
+        }),
+      ],
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+      ),
+    );
+
+    if (selected != null && mounted) {
+      if (selected == '__all__') {
+        // Clear both court and courtroom filters
+        widget.onCourtSelected(null);
+        widget.onCourtroomSelected(null);
+      } else {
+        // Update both court and courtroom in a single call to ensure both are set
+        // Access the controller directly to update both filters atomically
+        final controller = ref.read(recordingsControllerProvider.notifier);
+        final currentState = ref.read(recordingsControllerProvider);
+        controller.updateFilters(
+          RecordingFilters(
+            court: court, // Set the court from the dropdown context
+            courtroom: selected, // Set the selected courtroom
+            query: currentState.filters.query,
+            fromDate: currentState.filters.fromDate,
+            toDate: currentState.filters.toDate,
+            tab: currentState.filters.tab,
+          ),
+        );
+      }
+    }
+  }
+
+  GlobalKey _getCourtKey(String court) {
+    if (!_courtKeys.containsKey(court)) {
+      _courtKeys[court] = GlobalKey();
+    }
+    return _courtKeys[court]!;
+  }
+
+  Widget _buildCourtItem(String court, bool isSelected, bool hasCourtrooms) {
+    final selectedCourtroom = widget.selectedCourt == court ? widget.selectedCourtroom : null;
+    final courtrooms = _getCourtrooms(court);
+    final courtKey = _getCourtKey(court);
+    
+    return InkWell(
+      key: courtKey,
+      onTap: () {
+        if (courtrooms.isNotEmpty) {
+          _showCourtroomDropdown(context, court, courtKey);
+        }
+        // If no courtrooms, do nothing
+      },
+      child: _buildCourtItemContent(court, isSelected, selectedCourtroom, hasCourtrooms),
+    );
+  }
+
+  Widget _buildCourtItemContent(String court, bool isSelected, String? selectedCourtroom, bool hasCourtrooms) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: isSelected
+            ? const Color(0xFF115343).withOpacity(0.08)
+            : null,
+        border: Border(
+          bottom: BorderSide(
+            color: Colors.grey.withOpacity(0.1),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.account_balance,
+                size: 18,
+                color: isSelected
+                    ? const Color(0xFF115343)
+                    : Colors.grey[600],
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  court,
+                  style: GoogleFonts.roboto(
+                    fontSize: 14,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                    color: isSelected
+                        ? const Color(0xFF115343)
+                        : Colors.grey[800],
+                  ),
+                ),
+              ),
+              if (hasCourtrooms)
+                Icon(
+                  Icons.arrow_drop_down,
+                  size: 20,
+                  color: const Color(0xFF115343).withOpacity(0.6),
+                ),
+              if (isSelected && !hasCourtrooms)
+                Icon(
+                  Icons.check,
+                  size: 18,
+                  color: const Color(0xFF115343),
+                ),
+            ],
+          ),
+          if (selectedCourtroom != null) ...[
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.only(left: 28),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.meeting_room,
+                    size: 14,
+                    color: const Color(0xFF115343).withOpacity(0.7),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      selectedCourtroom,
+                      style: GoogleFonts.roboto(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: const Color(0xFF115343).withOpacity(0.8),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
 
-  Widget _buildCourtroomItem(String label, bool isSelected, bool isAllOption, [bool isLast = false]) {
-    return InkWell(
-      onTap: () => widget.onCourtroomSelected(isAllOption ? null : label),
-      child: Container(
-        padding: const EdgeInsets.only(left: 44, right: 16, top: 10, bottom: 10),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? const Color(0xFF115343).withOpacity(0.06)
-              : null,
-          border: Border(
-            bottom: BorderSide(
-              color: Colors.grey.withOpacity(0.08),
-              width: isLast ? 1 : 0.5,
-            ),
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.meeting_room,
-              size: 16,
-              color: isSelected
-                  ? const Color(0xFF115343)
-                  : Colors.grey[500],
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                label,
-                style: GoogleFonts.roboto(
-                  fontSize: 13,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                  color: isSelected
-                      ? const Color(0xFF115343)
-                      : Colors.grey[700],
-                ),
-              ),
-            ),
-            if (isSelected)
-              Icon(
-                Icons.check,
-                size: 16,
-                color: const Color(0xFF115343),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
 }

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:dio/dio.dart';
 
 import '../comments/comments_panel.dart';
 import '../player/audio_player_controller.dart';
@@ -1427,8 +1428,71 @@ class _MyListButtonState extends ConsumerState<_MyListButton> {
     } catch (e) {
       print('[RecordingDetailScreen] API error: $e');
       if (mounted) {
+        String errorMessage = 'Operation failed';
+        
+        if (e is DioException) {
+          final statusCode = e.response?.statusCode;
+          final responseData = e.response?.data;
+          
+          // Check for duplicate/conflict errors (400 or 409)
+          if (statusCode == 400 || statusCode == 409) {
+            // Check if it's a duplicate error
+            String? apiMessage;
+            if (responseData is Map) {
+              apiMessage = responseData['message']?.toString() ?? 
+                          responseData['error']?.toString();
+            } else if (responseData is String) {
+              apiMessage = responseData;
+            }
+            
+            // Check if the message indicates a duplicate
+            final messageLower = (apiMessage ?? '').toLowerCase();
+            if (messageLower.contains('duplicate') || 
+                messageLower.contains('already') || 
+                messageLower.contains('exists') ||
+                messageLower.contains('already assigned')) {
+              errorMessage = isCurrentlyAssigned 
+                  ? 'This case is already removed from your list'
+                  : 'This case is already in your list';
+            } else if (apiMessage != null && apiMessage.isNotEmpty) {
+              // Use the API message if it's short and clear
+              errorMessage = apiMessage.length > 100 
+                  ? (isCurrentlyAssigned 
+                      ? 'This case is already removed from your list'
+                      : 'This case is already in your list')
+                  : apiMessage;
+            } else {
+              errorMessage = isCurrentlyAssigned 
+                  ? 'This case is already removed from your list'
+                  : 'This case is already in your list';
+            }
+          } else {
+            // For other errors, try to extract a clean message
+            if (responseData is Map) {
+              final apiMessage = responseData['message']?.toString() ?? 
+                                responseData['error']?.toString();
+              if (apiMessage != null && apiMessage.isNotEmpty) {
+                // Only use if it's a reasonable length
+                errorMessage = apiMessage.length > 150 
+                    ? 'Operation failed. Please try again.'
+                    : apiMessage;
+              }
+            } else if (responseData is String && responseData.length <= 150) {
+              errorMessage = responseData;
+            } else {
+              errorMessage = 'Operation failed. Please try again.';
+            }
+          }
+        }
+        
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Operation failed: $e')),
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: errorMessage.contains('already') 
+                ? Colors.orange.shade700 
+                : Colors.red.shade700,
+            duration: const Duration(seconds: 3),
+          ),
         );
       }
     } finally {
