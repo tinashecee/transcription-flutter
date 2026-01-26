@@ -239,146 +239,177 @@ class _TranscriptEditorState extends ConsumerState<TranscriptEditor> {
           ),
         ],
       ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-          // Basic Formatting
-          _buildIconButton(
-            Icons.format_bold, 
-            () => _toggleAttribute(controller, Attribute.bold),
-            isActive: _isAttributeActive(controller, Attribute.bold),
-            tooltip: 'Bold',
-          ),
-          _buildIconButton(
-            Icons.format_italic, 
-            () => _toggleAttribute(controller, Attribute.italic),
-            isActive: _isAttributeActive(controller, Attribute.italic),
-            tooltip: 'Italic',
-          ),
-          _buildIconButton(
-            Icons.format_underline, 
-            () => _toggleAttribute(controller, Attribute.underline),
-            isActive: _isAttributeActive(controller, Attribute.underline),
-            tooltip: 'Underline',
-          ),
-          _buildDivider(),
-          
-          // Alignment
-          _buildIconButton(
-            Icons.format_align_left, 
-            () => _applyAttribute(controller, Attribute.leftAlignment),
-            isActive: _isAttributeActive(controller, Attribute.leftAlignment) || 
-                      (!_isAttributeActive(controller, Attribute.centerAlignment) && 
-                       !_isAttributeActive(controller, Attribute.rightAlignment) && 
-                       !_isAttributeActive(controller, Attribute.justifyAlignment)),
-            tooltip: 'Align Left',
-          ),
-          _buildIconButton(
-            Icons.format_align_center, 
-            () => _applyAttribute(controller, Attribute.centerAlignment),
-            isActive: _isAttributeActive(controller, Attribute.centerAlignment),
-            tooltip: 'Align Center',
-          ),
-          _buildIconButton(
-            Icons.format_align_right, 
-            () => _applyAttribute(controller, Attribute.rightAlignment),
-            isActive: _isAttributeActive(controller, Attribute.rightAlignment),
-            tooltip: 'Align Right',
-          ),
-          _buildIconButton(
-            Icons.format_align_justify, 
-            () => _applyAttribute(controller, Attribute.justifyAlignment),
-            isActive: _isAttributeActive(controller, Attribute.justifyAlignment),
-            tooltip: 'Justify',
-          ),
-          _buildDivider(),
+      child: ListenableBuilder(
+        listenable: controller,
+        builder: (context, child) {
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Basic Formatting
+                _buildIconButton(
+                  Icons.format_bold, 
+                  () => _toggleAttribute(controller, Attribute.bold),
+                  isActive: _isAttributeActive(controller, Attribute.bold),
+                  tooltip: 'Bold',
+                ),
+                _buildIconButton(
+                  Icons.format_italic, 
+                  () => _toggleAttribute(controller, Attribute.italic),
+                  isActive: _isAttributeActive(controller, Attribute.italic),
+                  tooltip: 'Italic',
+                ),
+                _buildIconButton(
+                  Icons.format_underline, 
+                  () => _toggleAttribute(controller, Attribute.underline),
+                  isActive: _isAttributeActive(controller, Attribute.underline),
+                  tooltip: 'Underline',
+                ),
+                _buildDivider(),
+                
+                // Alignment
+                _buildIconButton(
+                  Icons.format_align_left, 
+                  () => _applyAttribute(controller, Attribute.leftAlignment),
+                  isActive: _isAttributeActive(controller, Attribute.leftAlignment) || 
+                            (!_isAttributeActive(controller, Attribute.centerAlignment) && 
+                             !_isAttributeActive(controller, Attribute.rightAlignment) && 
+                             !_isAttributeActive(controller, Attribute.justifyAlignment)),
+                  tooltip: 'Align Left',
+                ),
+                _buildIconButton(
+                  Icons.format_align_center, 
+                  () => _applyAttribute(controller, Attribute.centerAlignment),
+                  isActive: _isAttributeActive(controller, Attribute.centerAlignment),
+                  tooltip: 'Align Center',
+                ),
+                _buildIconButton(
+                  Icons.format_align_right, 
+                  () => _applyAttribute(controller, Attribute.rightAlignment),
+                  isActive: _isAttributeActive(controller, Attribute.rightAlignment),
+                  tooltip: 'Align Right',
+                ),
+                _buildIconButton(
+                  Icons.format_align_justify, 
+                  () => _applyAttribute(controller, Attribute.justifyAlignment),
+                  isActive: _isAttributeActive(controller, Attribute.justifyAlignment),
+                  tooltip: 'Justify',
+                ),
+                _buildDivider(),
 
-          // Lists
-          _buildIconButton(
-            Icons.format_list_bulleted, 
-            () => _toggleAttribute(controller, Attribute.ul),
-            isActive: _isAttributeActive(controller, Attribute.ul),
-            tooltip: 'Bulleted List',
-          ),
-          _buildIconButton(
-            Icons.format_list_numbered, 
-            () => _toggleAttribute(controller, Attribute.ol),
-            isActive: _isAttributeActive(controller, Attribute.ol),
-            tooltip: 'Numbered List',
-          ),
-          _buildDivider(),
-          
-          // Colors
-          _buildColorButton(controller, false), // Text Color
-          _buildColorButton(controller, true), // Highlight Color
-          _buildDivider(),
+                // Lists
+                _buildIconButton(
+                  Icons.format_list_bulleted, 
+                  () => _toggleAttribute(controller, Attribute.ul),
+                  isActive: _isAttributeActive(controller, Attribute.ul),
+                  tooltip: 'Bulleted List',
+                ),
+                _buildIconButton(
+                  Icons.format_list_numbered, 
+                  () => _toggleAttribute(controller, Attribute.ol),
+                  isActive: _isAttributeActive(controller, Attribute.ol),
+                  tooltip: 'Numbered List',
+                ),
+                _buildDivider(),
+                
+                // Colors
+                _buildColorButton(controller, false), // Text Color
+                _buildColorButton(controller, true), // Highlight Color
+                _buildDivider(),
 
-          // Font Family
-          _buildFontFamilySelector(controller),
-          const SizedBox(width: 4),
+                // Font Family
+                _buildFontFamilySelector(controller),
+                const SizedBox(width: 4),
 
-          // Font Size
-          _buildFontSizeSelector(controller),
-          const SizedBox(width: 4),
+                // Font Size
+                _buildFontSizeSelector(controller),
+                const SizedBox(width: 4),
 
-          // Line Spacing
-          _buildLineHeightSelector(controller),
-          _buildDivider(),
+                // Line Spacing
+                _buildLineHeightSelector(controller),
+                _buildDivider(),
 
-           // Zoom
-           _buildIconButton(Icons.zoom_out, () {
-             setState(() {
-               _zoomLevel = (_zoomLevel - 0.1).clamp(0.5, 3.0);
-             });
-           }, tooltip: 'Zoom Out'),
-           Text('${(_zoomLevel * 100).toInt()}%', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
-           _buildIconButton(Icons.zoom_in, () {
-             setState(() {
-               _zoomLevel = (_zoomLevel + 0.1).clamp(0.5, 3.0);
-             });
-           }, tooltip: 'Zoom In'),
-          ],
-        ),
+                 // Zoom
+                 _buildIconButton(Icons.zoom_out, () {
+                   setState(() {
+                     _zoomLevel = (_zoomLevel - 0.1).clamp(0.5, 3.0);
+                   });
+                 }, tooltip: 'Zoom Out'),
+                 Text('${(_zoomLevel * 100).toInt()}%', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                 _buildIconButton(Icons.zoom_in, () {
+                   setState(() {
+                     _zoomLevel = (_zoomLevel + 0.1).clamp(0.5, 3.0);
+                   });
+                 }, tooltip: 'Zoom In'),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
 
   Widget _buildColorButton(QuillController controller, bool isBackground) {
-    return _buildIconButton(
-      isBackground ? Icons.format_color_fill : Icons.format_color_text,
-      () {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text(isBackground ? 'Highlight Color' : 'Text Color'),
-            content: SingleChildScrollView(
-              child: BlockPicker(
-                pickerColor: Colors.black, // Default
-                onColorChanged: (color) {
-                  final hex = '#${color.value.toRadixString(16).substring(2)}';
-                  if (isBackground) {
-                    controller.formatSelection(BackgroundAttribute(hex));
-                  } else {
-                    controller.formatSelection(ColorAttribute(hex));
-                  }
-                  Navigator.of(context).pop();
-                },
+    final styles = controller.getSelectionStyle();
+    final attributeKey = isBackground ? 'background' : 'color';
+    final colorHex = styles.attributes[attributeKey]?.value;
+    
+    Color? activeColor;
+    if (colorHex != null && colorHex is String) {
+       // Hex string comes as '#RRGGBB' usually
+       if (colorHex.startsWith('#')) {
+          activeColor = Color(int.parse(colorHex.substring(1), radix: 16) + 0xFF000000);
+       }
+    }
+
+    return Tooltip(
+      message: isBackground ? 'Highlight Color' : 'Text Color',
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(4),
+        child: InkWell(
+          onTap: () {
+            showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: Text(isBackground ? 'Highlight Color' : 'Text Color'),
+                content: SingleChildScrollView(
+                  child: BlockPicker(
+                    pickerColor: activeColor ?? Colors.black,
+                    onColorChanged: (color) {
+                      final hex = '#${color.value.toRadixString(16).substring(2).toUpperCase()}';
+                      if (isBackground) {
+                        controller.formatSelection(BackgroundAttribute(hex));
+                      } else {
+                        controller.formatSelection(ColorAttribute(hex));
+                      }
+                      Navigator.of(context).pop();
+                    },
+                  ),
+                ),
               ),
+            );
+          },
+          borderRadius: BorderRadius.circular(4),
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child: Icon(
+              isBackground ? Icons.format_color_fill : Icons.format_color_text,
+              size: 20,
+              color: activeColor ?? Colors.grey.shade700,
             ),
           ),
-        );
-      },
-      tooltip: isBackground ? 'Highlight Color' : 'Text Color',
+        ),
+      ),
     );
   }
 
   Widget _buildFontFamilySelector(QuillController controller) {
-    // Determine current font family
-    // Quill stores attributes. If 'font' is not present, default is 'Inter' (Aptos) in our map logic, 
-    // but here we just show what's selected.
-    // Simplifying: we just show a dropdown.
+    // Enable reactivity
+    final styles = controller.getSelectionStyle();
+    final currentFont = styles.attributes['font']?.value as String? ?? 'Aptos'; // Default to Aptos if null
+
     return PopupMenuButton<String>(
       tooltip: 'Font Family',
       child: Container(
@@ -389,9 +420,16 @@ class _TranscriptEditorState extends ConsumerState<TranscriptEditor> {
         ),
         child: Row(
           children: [
-             const Icon(Icons.font_download, size: 16),
+             // Constrain width to avoid jumping
+             ConstrainedBox(
+               constraints: const BoxConstraints(maxWidth: 100),
+               child: Text(
+                 currentFont, 
+                 style: const TextStyle(fontSize: 12),
+                 overflow: TextOverflow.ellipsis,
+               )
+             ),
              const SizedBox(width: 4),
-             const Text('Font', style: TextStyle(fontSize: 12)),
              const Icon(Icons.arrow_drop_down, size: 16),
           ],
         ),
@@ -411,7 +449,20 @@ class _TranscriptEditorState extends ConsumerState<TranscriptEditor> {
   }
 
   Widget _buildFontSizeSelector(QuillController controller) {
-      // Basic implementation
+      final styles = controller.getSelectionStyle();
+      // Size attribute in Quill is often String or Double depending... 
+      // Default styles usually don't set size unless explicit. 
+      // Let's assume default is 14 if missing.
+      final currentSizeVal = styles.attributes['size']?.value;
+      String currentSize = '14';
+      if (currentSizeVal != null) {
+        currentSize = currentSizeVal.toString();
+        // Maybe truncate if it's a double like 14.0 -> 14
+        if (currentSize.endsWith('.0')) {
+          currentSize = currentSize.substring(0, currentSize.length - 2);
+        }
+      }
+
       return PopupMenuButton<double>(
       tooltip: 'Font Size',
       child: Container(
@@ -422,9 +473,8 @@ class _TranscriptEditorState extends ConsumerState<TranscriptEditor> {
         ),
         child: Row(
           children: [
-             const Icon(Icons.format_size, size: 16),
+             Text(currentSize, style: const TextStyle(fontSize: 12)),
              const SizedBox(width: 4),
-             const Text('Size', style: TextStyle(fontSize: 12)),
              const Icon(Icons.arrow_drop_down, size: 16),
           ],
         ),
@@ -444,6 +494,19 @@ class _TranscriptEditorState extends ConsumerState<TranscriptEditor> {
   }
 
   Widget _buildLineHeightSelector(QuillController controller) {
+    final styles = controller.getSelectionStyle();
+    final currentHeightVal = styles.attributes['line-height']?.value;
+    String currentHeight = '1.15'; // Default (Standard)
+    
+    // Check for block attribute in styles? 
+    // Usually getSelectionStyle merges block attributes too.
+    for(final attr in styles.attributes.values) {
+        if (attr.key == Attribute.lineHeight.key) {
+           currentHeight = attr.value.toString();
+           break;
+        }
+    }
+
     return PopupMenuButton<double>(
       tooltip: 'Line Spacing',
       child: Container(
@@ -455,6 +518,8 @@ class _TranscriptEditorState extends ConsumerState<TranscriptEditor> {
         child: Row(
           children: [
              const Icon(Icons.format_line_spacing, size: 16),
+             const SizedBox(width: 4),
+             Text(currentHeight, style: const TextStyle(fontSize: 12)),
              const SizedBox(width: 4),
              const Icon(Icons.arrow_drop_down, size: 16),
           ],
