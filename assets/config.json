@@ -1,5 +1,6 @@
 {
   "apiBaseUrl": "https://api.testimony.co.zw",
   "audioBaseUrl": "https://api.testimony.co.zw",
-  "pedalWebSocketUrl": "ws://127.0.0.1:8080"
+  "pedalWebSocketUrl": "ws://127.0.0.1:8080",
+  "apiKey": "sk_-RGRRGSTI1udBskj_EWr9v7WpRFWlEfSo7yGYHBKqhw"
 }

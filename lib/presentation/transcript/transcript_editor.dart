@@ -127,7 +127,7 @@ class _TranscriptEditorState extends ConsumerState<TranscriptEditor> {
                                     fontFamily: 'Inter',
                                   ),
                                   const HorizontalSpacing(0, 0),
-                                  const VerticalSpacing(6, 0), // Add top spacing for paragraphs
+                                  const VerticalSpacing(12, 0), // Increased to 12px for better inter-paragraph gaps
                                   const VerticalSpacing(0, 0),
                                   null,
                                 ),

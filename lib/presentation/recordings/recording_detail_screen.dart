@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:collection/collection.dart';
 
 import '../comments/comments_panel.dart';
 import '../player/audio_player_controller.dart';
@@ -54,6 +55,8 @@ class _RecordingDetailScreenState
   int _pollErrorCount = 0;
   static const int _maxPollErrors = 3;
 
+
+
   late AnimationController _arrowController;
   late Animation<double> _arrowAnimation;
 
@@ -80,11 +83,46 @@ class _RecordingDetailScreenState
           .read(audioPlayerControllerProvider.notifier)
           .loadRecording(recording.audioPath);
     });
+    
+    // Setup onEdit callback to update status
+    ref.read(transcriptControllerProvider.notifier).onEdit = () {
+      _handleEdit();
+    };
+  }
+
+  void _handleEdit() {
+    final recordingId = widget.recordingId;
+    print('[RecordingDetailScreen] User edit detected for $recordingId');
+    
+    // Check current status to avoid unnecessary calls
+    final listState = ref.read(recordingsControllerProvider);
+    final recording = listState.items.firstWhereOrNull((r) => r.id == recordingId);
+    
+    // Only update if not already in progress
+    if (recording != null && recording.status != 'in_progress') {
+         // Fire and forget update
+         ref.read(statusRepositoryProvider).updateStatus(
+           recordingId: recordingId,
+           status: 'in_progress',
+         ).then((_) {
+            if (mounted) {
+               // Update local list cache immediately
+               ref.read(recordingsControllerProvider.notifier).updateRecordingStatus(recordingId, 'in_progress');
+               // Refresh detail view
+               ref.invalidate(recordingDetailProvider(recordingId));
+            }
+         }).catchError((e) {
+            print('[RecordingDetailScreen] Failed to update status on edit: $e');
+         });
+    }
   }
 
   @override
   void dispose() {
     print('[RecordingDetailScreen] dispose id=${widget.recordingId}');
+    // Clear callback to prevent memory leaks or calling on disposed widget
+    ref.read(transcriptControllerProvider.notifier).onEdit = null;
+    
     _statusTimer?.cancel();
     _arrowController.dispose();
     super.dispose();
@@ -118,20 +156,48 @@ class _RecordingDetailScreenState
 
     if (!mounted) return;
 
-    await showDialog(
+    final result = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (context) => _RetranscribeDialog(
         recordingId: recording.id.toString(),
       ),
     );
-    // Update status in list cache so detail provider patch sees it
-    ref.read(recordingsControllerProvider.notifier).updateRecordingStatus(widget.recordingId, 'pending');
-    
-    // Refresh after dialog closes (on success)
-    ref.invalidate(recordingDetailProvider(widget.recordingId));
-    // Also reload the transcript editor content
-    ref.read(transcriptControllerProvider.notifier).load(widget.recordingId);
+
+    if (result == true) {
+      if (!mounted) return;
+      
+      try {
+        if (mounted) {
+          // Force status to "pending" because backend might keep "completed"
+          // Retranscription implies we need to review it again.
+          await ref.read(statusRepositoryProvider).updateStatus(
+            recordingId: widget.recordingId,
+            status: 'pending',
+          );
+
+          // Update list cache
+          ref.read(recordingsControllerProvider.notifier).updateRecordingStatus(
+            widget.recordingId, 
+            'pending'
+          );
+          
+          // Refresh detail view
+          ref.invalidate(recordingDetailProvider(widget.recordingId));
+          
+          // Reload editor content
+          ref.read(transcriptControllerProvider.notifier).load(widget.recordingId);
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+             const SnackBar(content: Text('Retranscription completed. Status set to Pending.')),
+          );
+        }
+      } catch (e) {
+        print('Error syncing status after retranscribe: $e');
+        // Fallback: refresh anyway
+        ref.invalidate(recordingDetailProvider(widget.recordingId));
+      }
+    }
   }
 
   String _formatTimeAgo(String? timestamp) {
@@ -258,12 +324,29 @@ class _RecordingDetailScreenState
                         ),
                         const Spacer(),
                         Consumer(
-                          builder: (context, ref, _) => ActionButton(
-                            icon: Icons.logout_rounded,
-                            tooltip: 'Logout',
-                            onPressed: () => ref.read(authControllerProvider).logout(),
-                            color: Colors.red.withOpacity(0.1),
-                            iconColor: Colors.red,
+                          builder: (context, ref, _) => Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ActionButton(
+                                icon: Icons.file_download_outlined,
+                                tooltip: 'Export DOCX',
+                                onPressed: () {
+                                  if (recording != null) {
+                                    ref.read(transcriptControllerProvider.notifier).exportTranscript(recording.title);
+                                  }
+                                },
+                                color: const Color(0xFF115343).withOpacity(0.1),
+                                iconColor: const Color(0xFF115343),
+                              ),
+                              const SizedBox(width: 8),
+                              ActionButton(
+                                icon: Icons.logout_rounded,
+                                tooltip: 'Logout',
+                                onPressed: () => ref.read(authControllerProvider).logout(),
+                                color: Colors.red.withOpacity(0.1),
+                                iconColor: Colors.red,
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -781,7 +864,11 @@ class _RecordingDetailScreenState
                                       menuChildren: [
                                         MenuItemButton(
                                           leadingIcon: const Icon(Icons.file_download_outlined, size: 18, color: Color(0xFF115343)),
-                                          onPressed: () => _exportTranscript(recording),
+                                          onPressed: () {
+                                            if (recording != null) {
+                                              ref.read(transcriptControllerProvider.notifier).exportTranscript(recording.title);
+                                            }
+                                          },
                                           child: Text(
                                             'Export to DOCX',
                                             style: GoogleFonts.roboto(
@@ -986,64 +1073,6 @@ class _RecordingDetailScreenState
     );
   }
 
-  Future<void> _exportTranscript(Recording recording) async {
-    try {
-      final transcriptHtml = ref.read(transcriptControllerProvider.notifier).getTranscriptHtml();
-
-      final caseNumber = recording.caseNumber.isNotEmpty ? recording.caseNumber : 'unknown_case';
-      final title = recording.title.isNotEmpty ? recording.title : 'Untitled';
-      final judge = recording.judgeName.isNotEmpty ? recording.judgeName : 'N/A';
-      final dateStamp = recording.date.toIso8601String();
-      final prosecution = recording.prosecutionCounsel.isNotEmpty ? recording.prosecutionCounsel : 'N/A';
-      final defense = recording.defenseCounsel.isNotEmpty ? recording.defenseCounsel : 'N/A';
-
-      final html = '''
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>$title</title>
-</head>
-<body>
-    <h1>$title</h1>
-    <p><strong>Case Number:</strong> $caseNumber</p>
-    <p><strong>Judge:</strong> $judge</p>
-    <p><strong>Date:</strong> $dateStamp</p>
-    <p><strong>Prosecution:</strong> $prosecution</p>
-    <p><strong>Defense:</strong> $defense</p>
-    <hr>
-    <div>$transcriptHtml</div>
-</body>
-</html>
-''';
-
-      final fileName = '${caseNumber}_${title.replaceAll(' ', '_')}.docx';
-      final destination = await getSaveLocation(suggestedName: fileName);
-      if (destination == null) return;
-
-      final client = ref.read(apiClientProvider).dio;
-      await client.post(
-        '/export/docx',
-        data: {'html': html},
-        onReceiveProgress: (count, total) {},
-      ).then((response) async {
-         // Assuming API returns file bytes or similar. This part needs refinement based on actual API response.
-         // For now, let's just show success as a placeholder if we were actually downloading it.
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Exported successfully to ${destination.path}')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Export failed: $e')),
-        );
-      }
-    }
-  }
 
   String _deltaToHtml(dynamic delta) {
     // Simplified delta to HTML converter for export
@@ -1395,7 +1424,7 @@ class _RetranscribeDialogState extends ConsumerState<_RetranscribeDialog> {
         // Auto-close after short delay to show success
         Future.delayed(const Duration(milliseconds: 1500), () {
           if (mounted) {
-            Navigator.pop(context);
+            Navigator.pop(context, true);
           }
         });
       },

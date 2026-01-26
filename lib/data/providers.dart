@@ -34,7 +34,10 @@ final apiClientProvider = Provider<ApiClient>((ref) {
 });
 
 final authRepositoryProvider = Provider<AuthRepositoryImpl>((ref) {
-  return AuthRepositoryImpl(ref.watch(apiClientProvider));
+  return AuthRepositoryImpl(
+    ref.watch(apiClientProvider),
+    ref.watch(appConfigProvider),
+  );
 });
 
 final recordingRepositoryProvider = Provider<RecordingRepositoryImpl>((ref) {

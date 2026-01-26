@@ -7,11 +7,13 @@ class AppConfig {
     required this.apiBaseUrl,
     required this.audioBaseUrl,
     required this.pedalWebSocketUrl,
+    required this.apiKey,
   });
 
   final String apiBaseUrl;
   final String audioBaseUrl;
   final String pedalWebSocketUrl;
+  final String apiKey;
 
   static Future<AppConfig> load() async {
     try {
@@ -25,6 +27,7 @@ class AppConfig {
       final apiBaseUrl = map['apiBaseUrl'] as String?;
       final audioBaseUrl = map['audioBaseUrl'] as String?;
       final pedalWebSocketUrl = map['pedalWebSocketUrl'] as String?;
+      final apiKey = map['apiKey'] as String?;
 
       if (apiBaseUrl == null || apiBaseUrl.isEmpty) {
         throw Exception('apiBaseUrl is missing or empty in config');
@@ -35,11 +38,15 @@ class AppConfig {
       if (pedalWebSocketUrl == null || pedalWebSocketUrl.isEmpty) {
         throw Exception('pedalWebSocketUrl is missing or empty in config');
       }
+      if (apiKey == null || apiKey.isEmpty) {
+        throw Exception('apiKey is missing or empty in config');
+      }
 
       return AppConfig(
         apiBaseUrl: apiBaseUrl,
         audioBaseUrl: audioBaseUrl,
         pedalWebSocketUrl: pedalWebSocketUrl,
+        apiKey: apiKey,
       );
     } catch (e) {
       // Provide fallback config for development
@@ -50,6 +57,7 @@ class AppConfig {
         apiBaseUrl: 'https://api.testimony.co.zw',
         audioBaseUrl: 'https://api.testimony.co.zw',
         pedalWebSocketUrl: 'ws://127.0.0.1:8080',
+        apiKey: 'sk_-RGRRGSTI1udBskj_EWr9v7WpRFWlEfSo7yGYHBKqhw',
       );
     }
   }

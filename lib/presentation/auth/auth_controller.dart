@@ -172,18 +172,14 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  Future<void> forgotPassword(String email) async {
-    _setState(_state.copyWith(isLoading: true, errorMessage: null));
+  /// Sends a password reset email. Returns null on success, or an error message on failure.
+  /// This method intentionally does NOT update auth state to avoid triggering router refresh.
+  Future<String?> forgotPassword(String email) async {
     try {
       await _ref.read(authRepositoryProvider).sendPasswordReset(email);
-      _setState(_state.copyWith(isLoading: false));
+      return null; // Success
     } catch (error) {
-      _setState(
-        _state.copyWith(
-          isLoading: false,
-          errorMessage: error.toString(),
-        ),
-      );
+      return error.toString();
     }
   }
 

@@ -24,20 +24,40 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
     super.dispose();
   }
 
+  bool _isLoading = false;
+  String? _errorMessage;
+
   Future<void> _handleSubmit() async {
     if (_formKey.currentState!.validate()) {
-      final authController = ref.read(authControllerProvider.notifier);
-      await authController.forgotPassword(_emailController.text);
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
       
-      if (mounted && ref.read(authControllerProvider).value.errorMessage == null) {
-        setState(() => _isSuccess = true);
+      final authController = ref.read(authControllerProvider.notifier);
+      final result = await authController.forgotPassword(_emailController.text);
+      
+      if (!mounted) return;
+      
+      if (result == null) {
+        // Success
+        setState(() {
+          _isLoading = false;
+          _isSuccess = true;
+        });
+      } else {
+        // Error
+        setState(() {
+          _isLoading = false;
+          _errorMessage = result;
+        });
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final authState = ref.watch(authControllerProvider).value;
+    // Use local state instead of authState for loading/error
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
@@ -53,13 +73,13 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
               width: 1,
             ),
           ),
-          child: _isSuccess ? _buildSuccessState() : _buildRequestState(authState),
+          child: _isSuccess ? _buildSuccessState() : _buildRequestState(),
         ),
       ),
     );
   }
 
-  Widget _buildRequestState(AuthState authState) {
+  Widget _buildRequestState() {
     return Form(
       key: _formKey,
       child: Column(
@@ -103,11 +123,11 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
           ),
           const SizedBox(height: 32),
 
-          if (authState.errorMessage != null)
+          if (_errorMessage != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 16),
               child: Text(
-                authState.errorMessage!,
+                _errorMessage!,
                 style: const TextStyle(color: Colors.redAccent, fontSize: 13),
               ),
             ),
@@ -116,7 +136,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
             width: double.infinity,
             height: 48,
             child: ElevatedButton(
-              onPressed: authState.isLoading ? null : _handleSubmit,
+              onPressed: _isLoading ? null : _handleSubmit,
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white,
                 foregroundColor: const Color(0xFF1B4D3E),
@@ -124,7 +144,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
-              child: authState.isLoading
+              child: _isLoading
                   ? const SizedBox(
                       width: 20,
                       height: 20,
