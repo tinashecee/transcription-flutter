@@ -96,7 +96,7 @@ class _RecordingDetailScreenState
               style: GoogleFonts.roboto(fontWeight: FontWeight.w600),
             ),
             Text(
-              'v${UpdateManager.appDisplayVersion ?? '2.1.7'}',
+              'v${UpdateManager.appDisplayVersion ?? '2.1.9'}',
               style: GoogleFonts.roboto(
                 fontSize: 11,
                 fontWeight: FontWeight.w500,

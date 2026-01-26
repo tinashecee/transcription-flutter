@@ -24,16 +24,21 @@ class AssignmentRepositoryImpl implements AssignmentRepository {
     String type = 'self_assigned',
   }) async {
     print('[AssignmentRepo] POST /add_transcription_user case_id=$recordingId user_id=$userId type=$type');
-    final response = await _client.dio.post(
-      '/add_transcription_user',
-      data: {
-        'case_id': recordingId,
-        'user_id': userId,
-        'date_assigned': DateTime.now().toIso8601String(),
-        'type': type,
-      },
-    );
-    print('[AssignmentRepo] assignRecording response: ${response.statusCode}');
+    try {
+      final response = await _client.dio.post(
+        '/add_transcription_user',
+        data: {
+          'case_id': recordingId,
+          'user_id': userId,
+          'type': type,
+        },
+      );
+      print('[AssignmentRepo] assignRecording response: ${response.statusCode}');
+    } on DioException catch (e) {
+      print('[AssignmentRepo] assignRecording error: ${e.response?.statusCode}');
+      print('[AssignmentRepo] Error message: ${e.response?.data}');
+      rethrow;
+    }
   }
 
   @override

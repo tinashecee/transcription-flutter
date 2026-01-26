@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:dio/dio.dart';
 
 import '../../domain/entities/recording.dart';
 import '../../domain/entities/assigned_user.dart';
@@ -127,7 +128,7 @@ class _RecordingsScreenState extends ConsumerState<RecordingsScreen> {
                         ),
                       ),
                       Text(
-                        'v${UpdateManager.appDisplayVersion ?? '2.1.7'}',
+                        'v${UpdateManager.appDisplayVersion ?? '2.1.9'}',
                         style: GoogleFonts.roboto(
                           color: Colors.white.withOpacity(0.7),
                           fontSize: 11,
@@ -397,8 +398,21 @@ class _RecordingTileState extends ConsumerState<_RecordingTile> {
     } catch (e) {
       print('[RecordingsScreen] API error: $e');
       if (mounted) {
+        String errorMessage = 'Failed to add to list';
+        if (e is DioException) {
+          final responseData = e.response?.data;
+          if (responseData is Map) {
+            errorMessage = responseData['message']?.toString() ?? 
+                          responseData['error']?.toString() ?? 
+                          errorMessage;
+          } else if (responseData is String) {
+            errorMessage = responseData;
+          } else {
+            errorMessage = e.response?.statusMessage ?? errorMessage;
+          }
+        }
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to add to list: $e')),
+          SnackBar(content: Text(errorMessage)),
         );
       }
     } finally {
