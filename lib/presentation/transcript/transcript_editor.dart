@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'transcript_controller.dart';
 import '../../data/providers.dart';
-import '../recordings/recording_detail_controller.dart';
 import '../recordings/recordings_controller.dart';
 
 class TranscriptEditor extends ConsumerStatefulWidget {
@@ -25,45 +25,36 @@ class TranscriptEditor extends ConsumerStatefulWidget {
 }
 
 class _TranscriptEditorState extends ConsumerState<TranscriptEditor> {
-  late final FocusNode _focusNode;
-  late final ScrollController _scrollController;
-  String _selectedFont = 'Helvetica';
-  bool _hasTriggeredProgress = false;
+  final FocusNode _focusNode = FocusNode();
+  final ScrollController _scrollController = ScrollController();
+  
+  // State for visual zoom
+  double _zoomLevel = 1.0; 
+
+  // Font options
+  final Map<String, TextStyle> _fontMap = {
+      'Calibri': GoogleFonts.openSans(),
+      'Aptos': GoogleFonts.inter(),
+      'Arial': GoogleFonts.arimo(),
+      'Times New Roman': GoogleFonts.tinos(),
+      'Helvetica': GoogleFonts.roboto(),
+      'Verdana': GoogleFonts.sourceSans3(),
+      'Georgia': GoogleFonts.lora(),
+      'Cambria': GoogleFonts.caladea(),
+      'Trebuchet MS': GoogleFonts.firaSans(),
+      'Courier New': GoogleFonts.courierPrime(),
+      'Comic Sans MS': GoogleFonts.comicNeue(),
+      'Garamond': GoogleFonts.ebGaramond(),
+      'Century Gothic': GoogleFonts.questrial(),
+      'Tahoma': GoogleFonts.openSans(),
+      'Segoe UI': GoogleFonts.notoSans(),
+  };
 
   @override
   void initState() {
     super.initState();
-    _focusNode = FocusNode(debugLabel: 'TranscriptEditorFocus');
-    _scrollController = ScrollController();
-
     // Load transcript
     ref.read(transcriptControllerProvider.notifier).load(widget.recordingId);
-    
-    // Setup first-edit callback for auto-progress
-    ref.read(transcriptControllerProvider.notifier).onFirstEdit = _onFirstEdit;
-  }
-  
-  void _onFirstEdit() {
-    if (_hasTriggeredProgress || !widget.isAssigned || !widget.isEditing) return;
-    _hasTriggeredProgress = true;
-    
-    // Update status to 'in_progress' silently in background
-    _updateStatusToInProgress();
-  }
-  
-  Future<void> _updateStatusToInProgress() async {
-    try {
-      await ref.read(statusRepositoryProvider).updateStatus(
-        recordingId: widget.recordingId,
-        status: 'in_progress',
-      );
-      // Update the cached list so the patch logic works
-      ref.read(recordingsControllerProvider.notifier).updateRecordingStatus(widget.recordingId, 'in_progress');
-      // NOTE: We do NOT invalidate recordingDetailProvider here because it causes 
-      // the transcript to reload and wipe user's unsaved changes.
-    } catch (e) {
-      debugPrint('Failed to update status: $e');
-    }
   }
 
   @override
@@ -73,263 +64,464 @@ class _TranscriptEditorState extends ConsumerState<TranscriptEditor> {
     super.dispose();
   }
 
-  TextStyle _getFontStyle(String fontFamily) {
-    switch (fontFamily) {
-      // Serif fonts
-      case 'Times New Roman':
-        return GoogleFonts.tinos();
-      case 'Garamond':
-        return GoogleFonts.ebGaramond();
-      case 'Georgia':
-        return GoogleFonts.lora();
-      case 'Book Antiqua':
-        return GoogleFonts.libreBodoni();
-      case 'Baskerville':
-        return GoogleFonts.libreBaskerville();
-      
-      // Sans Serif fonts
-      case 'Arial':
-        return GoogleFonts.inter();
-      case 'Calibri':
-        return GoogleFonts.openSans();
-      case 'Segoe UI':
-        return GoogleFonts.notoSans();
-      case 'Verdana':
-        return GoogleFonts.sourceSans3();
-      case 'Helvetica':
-        return GoogleFonts.inter();
-      case 'Trebuchet MS':
-        return GoogleFonts.firaSans();
-      case 'Aptos':
-        return GoogleFonts.quicksand();
-      
-      // Monospace fonts
-      case 'Consolas':
-        return GoogleFonts.firaCode();
-      case 'Courier New':
-        return GoogleFonts.robotoMono();
-      case 'Lucida Console':
-        return GoogleFonts.jetBrainsMono();
-      
-      // Script & Handwriting fonts
-      case 'Brush Script':
-        return GoogleFonts.dancingScript();
-      case 'Lucida Handwriting':
-        return GoogleFonts.caveat();
-      case 'Mistral':
-        return GoogleFonts.pacifico();
-      case 'Edwardian Script':
-        return GoogleFonts.greatVibes();
-      
-      default:
-        return GoogleFonts.inter();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(transcriptControllerProvider);
+    final controller = state.controller;
     final canEdit = widget.isAssigned && widget.isEditing;
-
-    // Enforce read-only state on the controller
-    state.controller.readOnly = !canEdit;
+    controller.readOnly = !canEdit;
 
     return Stack(
       children: [
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (state.errorMessage != null)
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.red.shade50,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.red.shade200),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.error_outline, color: Colors.red.shade700),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        state.errorMessage!,
-                        style: GoogleFonts.inter(
-                          color: Colors.red.shade900,
-                          fontWeight: FontWeight.w500,
-                        ),
+          children: [
+            if (state.errorMessage != null)
+              _buildErrorBanner(state.errorMessage!)
+            else ...[
+              
+              // Custom Toolbar
+              if (canEdit)
+                _buildToolbar(controller),
+
+              // Editor Surface
+              Expanded(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade200),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: () => ref.read(transcriptControllerProvider.notifier).load(widget.recordingId),
-                  icon: const Icon(Icons.refresh, size: 18),
-                  label: const Text('Retry'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red.shade900,
-                    side: BorderSide(color: Colors.red.shade300),
+                    ],
                   ),
-                ),
-              ],
-            ),
-          )
-        else ...[
+                  child: Column(
+                    children: [
+                      if (!canEdit && !widget.isAssigned)
+                         _buildReadOnlyBanner(),
 
-
-
-
-        // 4. Quill Toolbar (Minimal/Floating) + Save Button
-        if (canEdit)
-        // 4. Quill Toolbar (Minimal/Floating)
-        if (canEdit)
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Material(
-              color: const Color(0xFFF3F4F6),
-              child: SizedBox(
-                width: double.infinity,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  child: QuillSimpleToolbar(
-                    controller: state.controller,
-                    config: QuillSimpleToolbarConfig(
-                      toolbarSize: 28,
-                      buttonOptions: const QuillSimpleToolbarButtonOptions(
-                        base: QuillToolbarBaseButtonOptions(
-                          iconSize: 18,
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: QuillEditor.basic(
+                            controller: controller,
+                            focusNode: _focusNode,
+                            scrollController: _scrollController,
+                            config: QuillEditorConfig(
+                              scrollable: true,
+                              autoFocus: false,
+                              expands: false,
+                              padding: const EdgeInsets.all(20),
+                              showCursor: canEdit,
+                              customStyles: DefaultStyles(
+                                paragraph: DefaultTextBlockStyle(
+                                  TextStyle(
+                                    fontSize: 14 * _zoomLevel,
+                                    color: const Color(0xFF374151),
+                                    height: 1.15, // Revert to standard comfortable height
+                                    fontFamily: 'Inter',
+                                  ),
+                                  const HorizontalSpacing(0, 0),
+                                  const VerticalSpacing(6, 0), // Add top spacing for paragraphs
+                                  const VerticalSpacing(0, 0),
+                                  null,
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                      showFontFamily: true,
-                      showFontSize: true,
-                      showBoldButton: true,
-                      showItalicButton: true,
-                      showUnderLineButton: true,
-                      showStrikeThrough: false,
-                      showColorButton: false, 
-                      showBackgroundColorButton: false,
-                      showAlignmentButtons: false,
-                      showListBullets: true,
-                      showListNumbers: true,
-                      showCodeBlock: false,
-                      showQuote: false,
-                      showIndent: false,
-                      showLink: false,
-                      showUndo: true,
-                      showRedo: true,
-                      showDirection: false,
-                      showSearchButton: false,
-                      showSubscript: false,
-                      showSuperscript: false,
-                    ),
+                    ],
                   ),
                 ),
               ),
+            ],
+          ],
+        ),
+
+        // Saving Indicator
+        if (state.isSaving)
+          Positioned(
+            top: 16,
+            right: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black87,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  ),
+                  SizedBox(width: 8),
+                  Text(
+                    'Saving...',
+                    style: TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ],
+              ),
             ),
           ),
-        const SizedBox.shrink(),
-        // 2. Editor Surface (Page Look)
-        Expanded(
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade200),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+      ],
+    );
+  }
+
+  Widget _buildErrorBanner(String message) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.red.shade200),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.error_outline, color: Colors.red.shade700),
+          const SizedBox(width: 12),
+          Text(message, style: TextStyle(color: Colors.red.shade900)),
+          const Spacer(),
+          TextButton(
+            onPressed: () => ref.read(transcriptControllerProvider.notifier).load(widget.recordingId),
+            child: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReadOnlyBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      color: Colors.grey.shade100,
+      child: Row(
+        children: [
+          Icon(Icons.lock_outline, size: 16, color: Colors.grey.shade600),
+          const SizedBox(width: 8),
+          Text(
+            'Read-only view',
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
             ),
-            child: Column(
-              children: [
-                // Warning Banner inside the "page" if read-only AND NOT ASSIGNED
-                // If assigned, we just show the "Edit" button in toolbar, so no need for a warning.
-                if (!canEdit && !widget.isAssigned)
-                  Container(
-                    width: double.infinity,
-                    alignment: Alignment.centerRight,
-                    padding: const EdgeInsets.only(top: 8, right: 16),
-                    child: Tooltip(
-                      message: 'This transcript is not assigned to you its on read mode, to be editable you need it assign to you.',
-                      padding: const EdgeInsets.all(8),
-                      textStyle: GoogleFonts.inter(color: Colors.white, fontSize: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.black87,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade50,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.orange.shade200),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.lock_outline,
-                                size: 12, color: Colors.orange.shade800),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Read Only',
-                              style: GoogleFonts.inter(
-                                color: Colors.orange.shade900,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
+          ),
+        ],
+      ),
+    );
+  }
 
-                // The Actual Editor
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: QuillEditor(
-                      controller: state.controller,
-                      focusNode: _focusNode,
-                      scrollController: _scrollController,
-                      config: QuillEditorConfig(
-                        padding: const EdgeInsets.only(left: 16, right: 16, top: 0, bottom: 16),
-                        autoFocus: false,
-                        readOnlyMouseCursor: SystemMouseCursors.text,
-                        enableInteractiveSelection: true,
-                        placeholder: 'Start typing transcription...',
-                        customStyleBuilder: (attribute) {
-                          if (attribute.key == 'font') {
-                            return _getFontStyle(attribute.value);
-                          }
-                          return GoogleFonts.inter(
-                            height: 1.4,
-                            color: const Color(0xFF374151),
-                            fontSize: 14, // Small font size
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                ),
+  Widget _buildToolbar(QuillController controller) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+          // Basic Formatting
+          _buildIconButton(
+            Icons.format_bold, 
+            () => _toggleAttribute(controller, Attribute.bold),
+            isActive: _isAttributeActive(controller, Attribute.bold),
+            tooltip: 'Bold',
+          ),
+          _buildIconButton(
+            Icons.format_italic, 
+            () => _toggleAttribute(controller, Attribute.italic),
+            isActive: _isAttributeActive(controller, Attribute.italic),
+            tooltip: 'Italic',
+          ),
+          _buildIconButton(
+            Icons.format_underline, 
+            () => _toggleAttribute(controller, Attribute.underline),
+            isActive: _isAttributeActive(controller, Attribute.underline),
+            tooltip: 'Underline',
+          ),
+          _buildDivider(),
+          
+          // Alignment
+          _buildIconButton(
+            Icons.format_align_left, 
+            () => _applyAttribute(controller, Attribute.leftAlignment),
+            isActive: _isAttributeActive(controller, Attribute.leftAlignment) || 
+                      (!_isAttributeActive(controller, Attribute.centerAlignment) && 
+                       !_isAttributeActive(controller, Attribute.rightAlignment) && 
+                       !_isAttributeActive(controller, Attribute.justifyAlignment)),
+            tooltip: 'Align Left',
+          ),
+          _buildIconButton(
+            Icons.format_align_center, 
+            () => _applyAttribute(controller, Attribute.centerAlignment),
+            isActive: _isAttributeActive(controller, Attribute.centerAlignment),
+            tooltip: 'Align Center',
+          ),
+          _buildIconButton(
+            Icons.format_align_right, 
+            () => _applyAttribute(controller, Attribute.rightAlignment),
+            isActive: _isAttributeActive(controller, Attribute.rightAlignment),
+            tooltip: 'Align Right',
+          ),
+          _buildIconButton(
+            Icons.format_align_justify, 
+            () => _applyAttribute(controller, Attribute.justifyAlignment),
+            isActive: _isAttributeActive(controller, Attribute.justifyAlignment),
+            tooltip: 'Justify',
+          ),
+          _buildDivider(),
 
-              ],
+          // Lists
+          _buildIconButton(
+            Icons.format_list_bulleted, 
+            () => _toggleAttribute(controller, Attribute.ul),
+            isActive: _isAttributeActive(controller, Attribute.ul),
+            tooltip: 'Bulleted List',
+          ),
+          _buildIconButton(
+            Icons.format_list_numbered, 
+            () => _toggleAttribute(controller, Attribute.ol),
+            isActive: _isAttributeActive(controller, Attribute.ol),
+            tooltip: 'Numbered List',
+          ),
+          _buildDivider(),
+          
+          // Colors
+          _buildColorButton(controller, false), // Text Color
+          _buildColorButton(controller, true), // Highlight Color
+          _buildDivider(),
+
+          // Font Family
+          _buildFontFamilySelector(controller),
+          const SizedBox(width: 4),
+
+          // Font Size
+          _buildFontSizeSelector(controller),
+          const SizedBox(width: 4),
+
+          // Line Spacing
+          _buildLineHeightSelector(controller),
+          _buildDivider(),
+
+           // Zoom
+           _buildIconButton(Icons.zoom_out, () {
+             setState(() {
+               _zoomLevel = (_zoomLevel - 0.1).clamp(0.5, 3.0);
+             });
+           }, tooltip: 'Zoom Out'),
+           Text('${(_zoomLevel * 100).toInt()}%', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+           _buildIconButton(Icons.zoom_in, () {
+             setState(() {
+               _zoomLevel = (_zoomLevel + 0.1).clamp(0.5, 3.0);
+             });
+           }, tooltip: 'Zoom In'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildColorButton(QuillController controller, bool isBackground) {
+    return _buildIconButton(
+      isBackground ? Icons.format_color_fill : Icons.format_color_text,
+      () {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(isBackground ? 'Highlight Color' : 'Text Color'),
+            content: SingleChildScrollView(
+              child: BlockPicker(
+                pickerColor: Colors.black, // Default
+                onColorChanged: (color) {
+                  final hex = '#${color.value.toRadixString(16).substring(2)}';
+                  if (isBackground) {
+                    controller.formatSelection(BackgroundAttribute(hex));
+                  } else {
+                    controller.formatSelection(ColorAttribute(hex));
+                  }
+                  Navigator.of(context).pop();
+                },
+              ),
+            ),
+          ),
+        );
+      },
+      tooltip: isBackground ? 'Highlight Color' : 'Text Color',
+    );
+  }
+
+  Widget _buildFontFamilySelector(QuillController controller) {
+    // Determine current font family
+    // Quill stores attributes. If 'font' is not present, default is 'Inter' (Aptos) in our map logic, 
+    // but here we just show what's selected.
+    // Simplifying: we just show a dropdown.
+    return PopupMenuButton<String>(
+      tooltip: 'Font Family',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.shade300),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          children: [
+             const Icon(Icons.font_download, size: 16),
+             const SizedBox(width: 4),
+             const Text('Font', style: TextStyle(fontSize: 12)),
+             const Icon(Icons.arrow_drop_down, size: 16),
+          ],
+        ),
+      ),
+      itemBuilder: (context) {
+         return _fontMap.keys.map((fontName) {
+           return PopupMenuItem<String>(
+             value: fontName,
+             child: Text(fontName, style: _fontMap[fontName]),
+             onTap: () {
+               controller.formatSelection(Attribute.fromKeyValue('font', fontName));
+             },
+           );
+         }).toList();
+      },
+    );
+  }
+
+  Widget _buildFontSizeSelector(QuillController controller) {
+      // Basic implementation
+      return PopupMenuButton<double>(
+      tooltip: 'Font Size',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.shade300),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          children: [
+             const Icon(Icons.format_size, size: 16),
+             const SizedBox(width: 4),
+             const Text('Size', style: TextStyle(fontSize: 12)),
+             const Icon(Icons.arrow_drop_down, size: 16),
+          ],
+        ),
+      ),
+      itemBuilder: (context) {
+         return [10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 30.0].map((size) {
+           return PopupMenuItem<double>(
+             value: size,
+             child: Text(size.toStringAsFixed(0)),
+             onTap: () {
+               controller.formatSelection(Attribute.fromKeyValue('size', size));
+             },
+           );
+         }).toList();
+      },
+    );
+  }
+
+  Widget _buildLineHeightSelector(QuillController controller) {
+    return PopupMenuButton<double>(
+      tooltip: 'Line Spacing',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.shade300),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          children: [
+             const Icon(Icons.format_line_spacing, size: 16),
+             const SizedBox(width: 4),
+             const Icon(Icons.arrow_drop_down, size: 16),
+          ],
+        ),
+      ),
+      itemBuilder: (context) {
+         return [1.0, 1.15, 1.5, 2.0].map((height) {
+           return PopupMenuItem<double>(
+             value: height,
+             child: Text(height.toString()),
+             onTap: () {
+               // Apply line height as a block attribute
+               controller.formatSelection(Attribute.clone(Attribute.lineHeight, height));
+             },
+           );
+         }).toList();
+      },
+    );
+  }
+
+  bool _isAttributeActive(QuillController controller, Attribute attribute) {
+    final style = controller.getSelectionStyle();
+    return style.attributes.containsKey(attribute.key) && 
+           style.attributes[attribute.key]!.value == attribute.value;
+  }
+
+  void _toggleAttribute(QuillController controller, Attribute attribute) {
+    final isActive = _isAttributeActive(controller, attribute);
+    if (isActive) {
+      controller.formatSelection(Attribute.clone(attribute, null));
+    } else {
+      controller.formatSelection(attribute);
+    }
+  }
+
+  void _applyAttribute(QuillController controller, Attribute attribute) {
+    controller.formatSelection(attribute);
+  }
+
+  Widget _buildDivider() {
+    return Container(
+      height: 24,
+      width: 1,
+      color: Colors.grey.shade300,
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+    );
+  }
+
+  Widget _buildIconButton(IconData icon, VoidCallback onPressed, {bool isActive = false, String? tooltip}) {
+    return Tooltip(
+      message: tooltip ?? '',
+      child: Material(
+        color: isActive ? Colors.blue.withOpacity(0.1) : Colors.transparent,
+        borderRadius: BorderRadius.circular(4),
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(4),
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child: Icon(
+              icon,
+              size: 20,
+              color: isActive ? Colors.blue.shade700 : Colors.grey.shade700,
             ),
           ),
         ),
-        ],
-      ],
-    ),
-    ],
-  );
+      ),
+    );
+  }
 }
-}
-
-

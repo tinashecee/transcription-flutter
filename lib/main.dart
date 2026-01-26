@@ -43,7 +43,7 @@ Future<void> main() async {
         loggingServiceProvider.overrideWithValue(loggingService),
         // Remove mock authentication overrides - now using real API
       ],
-      child: const TranscriberApp(),
+      child: const TestimonyApp(),
     ),
   );
 }

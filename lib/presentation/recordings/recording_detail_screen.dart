@@ -988,9 +988,7 @@ class _RecordingDetailScreenState
 
   Future<void> _exportTranscript(Recording recording) async {
     try {
-      final state = ref.read(transcriptControllerProvider);
-      final delta = state.controller.document.toDelta();
-      final transcriptHtml = _deltaToHtml(delta);
+      final transcriptHtml = ref.read(transcriptControllerProvider.notifier).getTranscriptHtml();
 
       final caseNumber = recording.caseNumber.isNotEmpty ? recording.caseNumber : 'unknown_case';
       final title = recording.title.isNotEmpty ? recording.title : 'Untitled';

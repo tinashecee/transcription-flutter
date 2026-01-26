@@ -1,9 +1,11 @@
-import 'package:flutter/widgets.dart';
-import 'package:flutter_quill/flutter_quill.dart';
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:html/dom.dart' as dom;
-import 'package:html/parser.dart' as html_parser;
+import 'package:flutter/services.dart';
+import 'package:flutter_quill/flutter_quill.dart';
+import 'package:dart_quill_delta/dart_quill_delta.dart';
+import 'package:flutter_quill_delta_from_html/flutter_quill_delta_from_html.dart';
 import 'package:logging/logging.dart';
+import 'package:vsc_quill_delta_to_html/vsc_quill_delta_to_html.dart';
 
 import '../../app/providers.dart';
 import '../../data/providers.dart';
@@ -49,7 +51,7 @@ class TranscriptController extends StateNotifier<TranscriptState> {
   String? _recordingId;
   late final Logger _logger = _ref.read(loggingServiceProvider).logger;
   
-  /// Callback triggered on first edit. Used to update status to 'in_progress'.
+  /// Callback triggered on first edit
   void Function()? onFirstEdit;
 
   Future<void> load(String recordingId) async {
@@ -59,28 +61,46 @@ class TranscriptController extends StateNotifier<TranscriptState> {
       final html = await repo.fetchTranscript(recordingId);
       _logger.info(
         '[TranscriptController] load recording=$recordingId '
-        'length=${html.length}',
+        'length=${html.length} content_preview=${html.substring(0, html.length > 200 ? 200 : html.length)}',
       );
 
-      // Dispose old controller
-      final oldController = state.controller;
-      oldController.dispose();
-      _logger.info('[TranscriptController] Disposed old controller');
+      
+      // Check if content looks like HTML (basic check)
+      // If it doesn't contain tags, standard HTML parsers might strip newlines.
+      final isHtml = html.contains('<') && html.contains('>');
 
-      // Convert HTML to Delta
-      final delta = _htmlToDelta(html);
-      _logger.info('[TranscriptController] Converted to delta: ${delta.length} operations');
-
-      // Create a NEW controller with the document
-      final document = Document.fromDelta(delta);
+      Delta delta;
+      if (isHtml) {
+         delta = HtmlToDelta().convert(html);
+      } else {
+         var text = html;
+         if (!text.endsWith('\n')) {
+            text += '\n';
+         }
+         delta = Delta()..insert(text);
+      }
+      
+      // Ensure delta ends with newline (double check for HTML conversion too)
+      if (delta.isNotEmpty && delta.last.data is String && !(delta.last.data as String).endsWith('\n')) {
+        delta.insert('\n');
+      }
+      
+      _logger.info('[TranscriptController] Converted Delta: ${delta.toJson()}');
+      
       final newController = QuillController(
-        document: document,
+        document: Document.fromDelta(delta),
         selection: const TextSelection.collapsed(offset: 0),
       );
-      _setupControllerListeners(newController);
-      _logger.info('[TranscriptController] Created new controller');
+      
+      // Listen for changes to trigger onFirstEdit
+      newController.document.changes.listen((change) {
+         if (!state.hasStartedEditing && change.source == ChangeSource.local) {
+            state = state.copyWith(hasStartedEditing: true);
+            onFirstEdit?.call();
+            _logger.info('[TranscriptController] First edit detected');
+         }
+      });
 
-      // Update state with the new controller
       state = TranscriptState(
         controller: newController,
         isSaving: false,
@@ -93,285 +113,56 @@ class TranscriptController extends StateNotifier<TranscriptState> {
     }
   }
 
-  void _setupControllerListeners(QuillController controller) {
-    controller.document.changes.listen((event) {
-      _logger.info('[TranscriptController] Document changed');
-      
-      // Trigger first-edit callback only once
-      if (!state.hasStartedEditing) {
-        state = state.copyWith(hasStartedEditing: true);
-        onFirstEdit?.call();
-        _logger.info('[TranscriptController] First edit detected - callback triggered');
-      }
-    });
-  }
-
   Future<bool> save() async {
     final recordingId = _recordingId;
     if (recordingId == null) return false;
     state = state.copyWith(isSaving: true, errorMessage: null);
     try {
       final repo = _ref.read(transcriptRepositoryProvider);
-      final delta = state.controller.document.toDelta();
+      
+      final delta = state.controller.document.toDelta().toJson();
+      final converter = QuillDeltaToHtmlConverter(
+        List.castFrom(delta),
+        ConverterOptions(
+          converterOptions: OpConverterOptions(
+             inlineStylesFlag: true,
+          ),
+        ),
+      );
 
-      // Convert delta to HTML
-      final html = _deltaToHtml(delta);
-
-      _logger.info('[TranscriptController] Saving transcript for $recordingId (${html.length} chars)');
-
-      final response = await repo.saveTranscript(recordingId: recordingId, html: html);
-
-      _logger.info('[TranscriptController] Save response: $response');
-
+      final html = converter.convert();
+      
+      await repo.saveTranscript(
+        recordingId: recordingId,
+        html: html,
+      );
+      
       state = state.copyWith(isSaving: false);
       return true;
     } catch (error, stack) {
-      _logger.severe('[TranscriptController] Save failed', error, stack);
+      _logger.severe('[TranscriptController] save failed', error, stack);
       state = state.copyWith(
         isSaving: false,
-        errorMessage: error.toString(),
+        errorMessage: 'Failed to save transcript.',
       );
       return false;
     }
   }
 
-  Future<Map<String, dynamic>> checkTranscriptionStatus() async {
-    final recordingId = _recordingId;
-    if (recordingId == null) return {};
-    
-    try {
-      final repo = _ref.read(transcriptRepositoryProvider);
-      final status = await repo.checkTranscriptionStatus(recordingId);
-      _logger.info('[TranscriptController] Transcription status: $status');
-      return status;
-    } catch (error, stack) {
-      _logger.severe('[TranscriptController] Failed to check status', error, stack);
-      return {};
-    }
-  }
-
-  Future<Map<String, dynamic>> retranscribe(String userId) async {
-    final recordingId = _recordingId;
-    if (recordingId == null) return {'error': 'No recording loaded'};
-    
-    try {
-      final repo = _ref.read(transcriptRepositoryProvider);
-      
-      // Check for existing jobs first
-      _logger.info('[TranscriptController] Checking for existing jobs...');
-      final status = await repo.checkTranscriptionStatus(recordingId);
-      _logger.info('[TranscriptController] Status response: $status');
-      
-      final activeJobs = status['active_jobs'] as List?;
-      final transcriptionState = status['transcription_state'] as String?;
-      
-      if (activeJobs != null && activeJobs.isNotEmpty) {
-        final jobStatus = transcriptionState ?? 'active';
-        _logger.warning('[TranscriptController] Job already exists: $jobStatus');
-        return {
-          'error': 'Job Already Exists',
-          'message': 'A transcription job is already $jobStatus for this recording.',
-          'already_exists': true,
-        };
-      }
-      
-      _logger.info('[TranscriptController] No existing jobs found');
-      
-      // No existing job - create new one
-      _logger.info('[TranscriptController] Starting retranscribe for $recordingId');
-      final response = await repo.retranscribe(recordingId, userId);
-      _logger.info('[TranscriptController] Retranscribe response: $response');
-      
-      // Reload transcript after some delay
-      if (response['already_exists'] != true) {
-        Future.delayed(const Duration(seconds: 2), () {
-          if (_recordingId == recordingId) {
-            load(recordingId);
-          }
-        });
-      }
-      
-      return response;
-    } catch (error, stack) {
-      _logger.severe('[TranscriptController] Retranscribe failed', error, stack);
-      return {
-        'error': 'Retranscribe Failed',
-        'message': error.toString(),
-      };
-    }
-  }
-
-  @override
-  void dispose() {
-    _logger.info('[TranscriptController] Disposing controller');
-    state.controller.dispose();
-    super.dispose();
-  }
-
-  dynamic _htmlToDelta(String html) {
-    if (html.trim().isEmpty) {
-      final doc = Document();
-      return doc.toDelta();
-    }
-
-    final document = html_parser.parse(html);
-    final body = document.body;
-    if (body == null) {
-      final doc = Document();
-      return doc.toDelta();
-    }
-
-    final doc = Document();
-    int offset = 0;
-    for (final node in body.nodes) {
-      offset = _convertNode(node, doc, offset, {});
-    }
-
-    // Ensure trailing newline
-    if (offset > 0) {
-      doc.insert(offset, '\n');
-    }
-
-    return doc.toDelta();
-  }
-
-  int _convertNode(
-    dom.Node node,
-    Document document,
-    int offset,
-    Map<String, dynamic> attributes,
-  ) {
-    if (node is dom.Text) {
-      final text = node.text;
-      if (text.isNotEmpty) {
-        document.insert(offset, text);
-        offset += text.length;
-      }
-      return offset;
-    }
-
-    if (node is! dom.Element) return offset;
-
-    final tag = node.localName ?? '';
-    final newAttributes = Map<String, dynamic>.from(attributes);
-
-    // Handle inline formatting
-    switch (tag) {
-      case 'strong':
-      case 'b':
-        newAttributes['bold'] = true;
-        break;
-      case 'em':
-      case 'i':
-        newAttributes['italic'] = true;
-        break;
-      case 'u':
-        newAttributes['underline'] = true;
-        break;
-      case 's':
-      case 'strike':
-        newAttributes['strike'] = true;
-        break;
-      case 'a':
-        final href = node.attributes['href'];
-        if (href != null && href.isNotEmpty) {
-          newAttributes['link'] = href;
-        }
-        break;
-    }
-
-    // Process children
-    for (final child in node.nodes) {
-      offset = _convertNode(child, document, offset, newAttributes);
-    }
-
-    // Add newline for block elements
-    if (['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'br'].contains(tag)) {
-      document.insert(offset, '\n');
-      offset += 1;
-    }
-
-    return offset;
-  }
-
-  String _deltaToHtml(dynamic delta) {
-    final buffer = StringBuffer();
-    buffer.write('<!DOCTYPE html>\n<html>\n<head><meta charset="utf-8"></head>\n<body>\n');
-
-    final ops = delta.toList();
-    for (var i = 0; i < ops.length; i++) {
-      final op = ops[i];
-      final data = op.data;
-      
-      if (data is! String) continue;
-
-      final attributes = op.attributes ?? {};
-      final text = data.toString();
-
-      // Check if this is a newline with block attributes
-      if (text == '\n') {
-        if (i > 0) {
-          buffer.write('</p>\n');
-        }
-        if (i < ops.length - 1) {
-          final header = attributes['header'];
-          if (header != null) {
-            buffer.write('<h$header>');
-          } else {
-            buffer.write('<p>');
-          }
-        }
-        continue;
-      }
-
-      // Start paragraph if needed
-      if (i == 0 || (i > 0 && ops[i - 1].data == '\n')) {
-        final header = attributes['header'];
-        if (header != null) {
-          buffer.write('<h$header>');
-        } else {
-          buffer.write('<p>');
-        }
-      }
-
-      // Apply inline formatting
-      var formattedText = _escapeHtml(text);
-      
-      if (attributes['bold'] == true) {
-        formattedText = '<strong>$formattedText</strong>';
-      }
-      if (attributes['italic'] == true) {
-        formattedText = '<em>$formattedText</em>';
-      }
-      if (attributes['underline'] == true) {
-        formattedText = '<u>$formattedText</u>';
-      }
-      if (attributes['strike'] == true) {
-        formattedText = '<s>$formattedText</s>';
-      }
-      final link = attributes['link'];
-      if (link != null) {
-        formattedText = '<a href="$link">$formattedText</a>';
-      }
-
-      buffer.write(formattedText);
-    }
-
-    buffer.write('</p>\n</body>\n</html>');
-    return buffer.toString();
-  }
-
-  String _escapeHtml(String text) {
-    return text
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#39;');
+  String getTranscriptHtml() {
+    final delta = state.controller.document.toDelta().toJson();
+    final converter = QuillDeltaToHtmlConverter(
+      List.castFrom(delta),
+      ConverterOptions(
+        converterOptions: OpConverterOptions(
+           inlineStylesFlag: true,
+        ),
+      ),
+    );
+    return converter.convert();
   }
 }
 
-final transcriptControllerProvider =
-    StateNotifierProvider<TranscriptController, TranscriptState>((ref) {
+final transcriptControllerProvider = StateNotifierProvider<TranscriptController, TranscriptState>((ref) {
   return TranscriptController(ref);
 });
