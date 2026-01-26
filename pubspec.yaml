@@ -28,11 +28,13 @@ dependencies:
   just_audio_media_kit: ^2.1.0
   media_kit_libs_linux: ^1.2.1
   media_kit_libs_audio: ^1.0.7
+  window_manager: ^0.4.3
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.2
+  msix: ^3.16.8
 
 flutter:
   uses-material-design: true
@@ -41,3 +43,12 @@ flutter:
     - assets/images/testimony.png
     - assets/images/jsc_logo_1.webp
     - assets/images/logo.png
+
+msix_config:
+  display_name: Testimony Transcriber
+  publisher_display_name: Testimony
+  identity_name: com.testimony.transcriber
+  msix_version: 2.1.7.0
+  logo_path: assets/images/logo.png
+  capabilities: internetClient
+  install_certificate: false

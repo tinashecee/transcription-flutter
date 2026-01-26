@@ -45,7 +45,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Container(
-          padding: const EdgeInsets.all(32),
+          padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.1),
             borderRadius: BorderRadius.circular(16),
@@ -60,23 +60,40 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
+                // App branding
+                Center(
+                  child: Column(
+                    children: [
+                      Text(
+                        'Transcriber',
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 26,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'v2.1.7',
+                        style: GoogleFonts.inter(
+                          color: Colors.white.withOpacity(0.5),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
                 Text(
                   'Sign In',
                   style: GoogleFonts.inter(
                     color: Colors.white,
-                    fontSize: 28,
+                    fontSize: 24,
                     fontWeight: FontWeight.w300,
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Access your transcription dashboard',
-                  style: GoogleFonts.inter(
-                    color: Colors.white.withOpacity(0.7),
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 12),
 
                 // Email Address
                 Text(
@@ -87,7 +104,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 TextFormField(
                   controller: _emailController,
                   style: const TextStyle(color: Colors.white),
@@ -95,7 +112,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   decoration: _buildInputDecoration('Enter your email'),
                   validator: (v) => v!.isEmpty ? 'Required' : null,
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 12),
 
                 // Password
                 Text(
@@ -106,7 +123,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 TextFormField(
                   controller: _passwordController,
                   obscureText: true,
@@ -116,14 +133,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   decoration: _buildInputDecoration('Enter your password'),
                   validator: (v) => v!.isEmpty ? 'Required' : null,
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 12),
 
                 // Remember Me
                 Row(
                   children: [
                     SizedBox(
-                      width: 24,
-                      height: 24,
+                      width: 20,
+                      height: 20,
                       child: Checkbox(
                         value: _rememberMe,
                         onChanged: (v) => setState(() => _rememberMe = v!),
@@ -142,7 +159,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 12),
 
                 // Error Message
                 if (authState.errorMessage != null)
@@ -157,7 +174,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 // Sign In Button
                 SizedBox(
                   width: double.infinity,
-                  height: 48,
+                  height: 40,
                   child: ElevatedButton(
                     onPressed: authState.isLoading ? null : _handleLogin,
                     style: ElevatedButton.styleFrom(
@@ -182,7 +199,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 4),
                 Center(
                   child: TextButton(
                     onPressed: () => context.go('/forgot-password'),
