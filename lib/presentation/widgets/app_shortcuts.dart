@@ -62,18 +62,14 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts>
   void _handlePedal(FootPedalEvent event) {
     try {
       final controller = ref.read(audioPlayerControllerProvider.notifier);
-      if (event.pedal == 'left' && event.pressed) {
-        controller.rewind();
+      if (event.pedal == 'left' && event.pressed) {controller.rewind();
+       
       }
       if (event.pedal == 'right' && event.pressed) {
-        controller.forward();
+        controller.playPause();
       }
       if (event.pedal == 'middle') {
-        if (event.pressed) {
-          controller.pressPlay();
-        } else {
-          controller.releasePlay();
-        }
+       controller.forward();
       }
     } catch (e) {
       // Ignore foot pedal handling errors

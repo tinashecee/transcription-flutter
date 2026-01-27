@@ -731,18 +731,97 @@ class _RecordingDetailScreenState
           ? recording.defenseCounsel
           : 'N/A';
 
+      // Use Word-compatible HTML format (Word HTML Filter)
+      // This ensures Microsoft Word properly recognizes and preserves formatting
       final html = '''
 <!DOCTYPE html>
-<html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns="http://www.w3.org/TR/REC-html40">
 <head>
   <meta charset="UTF-8">
+  <meta name="ProgId" content="Word.Document">
+  <meta name="Generator" content="Transcriber App">
+  <meta name="Originator" content="Transcriber App">
   <title>Court Transcript - $caseNumber</title>
+  <!--[if gte mso 9]><xml>
+   <w:WordDocument>
+    <w:View>Print</w:View>
+    <w:Zoom>100</w:Zoom>
+    <w:DoNotOptimizeForBrowser/>
+   </w:WordDocument>
+  </xml><![endif]-->
   <style>
-    body { font-family: 'Times New Roman', serif; margin: 40px; line-height: 1.6; }
-    h1 { color: #115343; border-bottom: 2px solid #115343; padding-bottom: 10px; }
-    .metadata { background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
-    .metadata p { margin: 5px 0; }
-    hr { border: none; border-top: 1px solid #ccc; margin: 20px 0; }
+    @page {
+      size: 8.5in 11in;
+      margin: 1in 1in 1in 1in;
+      mso-header-margin: .5in;
+      mso-footer-margin: .5in;
+    }
+    body {
+      font-family: 'Times New Roman', serif;
+      font-size: 12pt;
+      line-height: 1.6;
+      margin: 0;
+      padding: 40px;
+    }
+    h1 {
+      color: #115343;
+      border-bottom: 2px solid #115343;
+      padding-bottom: 10px;
+      font-size: 18pt;
+      font-weight: bold;
+      margin-top: 12pt;
+      margin-bottom: 12pt;
+    }
+    h2 {
+      color: #115343;
+      font-size: 16pt;
+      font-weight: bold;
+      margin-top: 10pt;
+      margin-bottom: 10pt;
+    }
+    h3 {
+      color: #115343;
+      font-size: 14pt;
+      font-weight: bold;
+      margin-top: 8pt;
+      margin-bottom: 8pt;
+    }
+    .metadata {
+      background: #f5f5f5;
+      padding: 15px;
+      border: 1px solid #ddd;
+      margin-bottom: 20px;
+    }
+    .metadata p {
+      margin: 5px 0;
+    }
+    p {
+      margin: 6pt 0;
+      text-align: justify;
+    }
+    strong {
+      font-weight: bold;
+    }
+    em {
+      font-style: italic;
+    }
+    u {
+      text-decoration: underline;
+    }
+    s {
+      text-decoration: line-through;
+    }
+    a {
+      color: #115343;
+      text-decoration: underline;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #ccc;
+      margin: 20px 0;
+    }
   </style>
 </head>
 <body>
@@ -812,6 +891,9 @@ class _RecordingDetailScreenState
     final buffer = StringBuffer();
     
     final ops = delta.toList();
+    bool inParagraph = false;
+    String? currentBlockTag;
+    
     for (var i = 0; i < ops.length; i++) {
       final op = ops[i];
       final data = op.data;
@@ -821,29 +903,57 @@ class _RecordingDetailScreenState
       final attributes = op.attributes ?? {};
       final text = data.toString();
 
-      // Check if this is a newline with block attributes
+      // Handle newlines
       if (text == '\n') {
-        if (i > 0) {
-          buffer.write('</p>\n');
+        // Close current block if open
+        if (inParagraph && currentBlockTag != null) {
+          buffer.write('</$currentBlockTag>');
+          inParagraph = false;
+          currentBlockTag = null;
         }
+        
+        // Check if next operation is also a newline (consecutive newlines)
+        bool isConsecutiveNewline = false;
+        if (i < ops.length - 1) {
+          final nextOp = ops[i + 1];
+          final nextData = nextOp.data;
+          if (nextData is String && nextData == '\n') {
+            isConsecutiveNewline = true;
+          }
+        }
+        
+        // If consecutive newlines or last operation, create empty paragraph for spacing
+        if (isConsecutiveNewline || i == ops.length - 1) {
+          buffer.write('<p>&nbsp;</p>');
+        }
+        
+        // Start new block if there's more content
         if (i < ops.length - 1) {
           final header = attributes['header'];
           if (header != null) {
+            currentBlockTag = 'h$header';
             buffer.write('<h$header>');
+            inParagraph = true;
           } else {
+            currentBlockTag = 'p';
             buffer.write('<p>');
+            inParagraph = true;
           }
         }
         continue;
       }
 
-      // Start paragraph if needed
-      if (i == 0 || (i > 0 && ops[i - 1].data == '\n')) {
+      // Start paragraph/header if needed (beginning of content or after newline)
+      if (!inParagraph) {
         final header = attributes['header'];
         if (header != null) {
+          currentBlockTag = 'h$header';
           buffer.write('<h$header>');
+          inParagraph = true;
         } else {
+          currentBlockTag = 'p';
           buffer.write('<p>');
+          inParagraph = true;
         }
       }
 
@@ -870,11 +980,15 @@ class _RecordingDetailScreenState
       buffer.write(formattedText);
     }
 
+    // Close any open paragraph/header
+    if (inParagraph && currentBlockTag != null) {
+      buffer.write('</$currentBlockTag>');
+    }
+
     if (buffer.isEmpty) {
       return '<p>No transcript available.</p>';
     }
 
-    buffer.write('</p>\n');
     return buffer.toString();
   }
 

@@ -50,9 +50,13 @@ class RecordingRepositoryImpl implements RecordingRepository {
     // Courtrooms by court can be cached - they rarely change
     if (_courtroomsByCourtCache != null) return _courtroomsByCourtCache!;
     
-    // First, get courts to map court_id to court_name
-    final courtsResponse = await _client.dio.get<dynamic>('/courts');
-    final courtsRaw = courtsResponse.data;
+    // Make both API calls in parallel for better performance
+    final courtsResponse = _client.dio.get<dynamic>('/courts');
+    final courtroomsResponse = _client.dio.get<dynamic>('/courtrooms');
+    
+    final results = await Future.wait([courtsResponse, courtroomsResponse]);
+    final courtsRaw = results[0].data;
+    
     final courtsList = courtsRaw is List
         ? courtsRaw
         : (courtsRaw is Map<String, dynamic> ? courtsRaw['data'] as List? : null);
@@ -68,9 +72,8 @@ class RecordingRepositoryImpl implements RecordingRepository {
       }
     }
     
-    // Now get courtrooms
-    final response = await _client.dio.get<dynamic>('/courtrooms');
-    final raw = response.data;
+    // Process courtrooms
+    final raw = results[1].data;
     final list = raw is List
         ? raw
         : (raw is Map<String, dynamic> ? raw['data'] as List? : null);
@@ -99,7 +102,6 @@ class RecordingRepositoryImpl implements RecordingRepository {
       entry.value.sort();
     }
     _courtroomsByCourtCache = map;
-    print('[RecordingRepo] fetchCourtroomsByCourt: ${map.length} courts with courtrooms');
     return map;
   }
 
@@ -111,15 +113,9 @@ class RecordingRepositoryImpl implements RecordingRepository {
     String? userId,
   }) async {
     // NO CACHING - Always fetch fresh from API
-    print(
-      '[RecordingRepo] fetchRecordings (NO CACHE) page=$page size=$pageSize tab=${filters.tab.name} '
-      'court=${filters.court} courtroom=${filters.courtroom} '
-      'query=${filters.query} from=${filters.fromDate} to=${filters.toDate} userId=$userId',
-    );
 
     final useUserEndpoint = filters.tab != RecordingTab.all;
     if (useUserEndpoint && (userId == null || userId.isEmpty)) {
-      print('[RecordingRepo] missing userId for user recordings endpoint');
       throw DioException(
         requestOptions: RequestOptions(path: '/user/recordings/latest_paginated'),
         message: 'user_id is required for user recordings',
@@ -136,8 +132,6 @@ class RecordingRepositoryImpl implements RecordingRepository {
     final hasCourt = effectiveCourt != null && effectiveCourt.trim().isNotEmpty;
     final hasCourtroom =
         effectiveCourtroom != null && effectiveCourtroom.trim().isNotEmpty;
-    
-    print('[RecordingRepo] Filter values - court: "$effectiveCourt", courtroom: "$effectiveCourtroom", hasSearch: $hasSearch');
 
     final endpoint = useUserEndpoint
         ? '/user/recordings/latest_paginated'
@@ -160,29 +154,7 @@ class RecordingRepositoryImpl implements RecordingRepository {
         'courtroom': effectiveCourtroom!.trim(),
       };
       
-      // Build the full URL string for logging
-      final baseUrl = _client.dio.options.baseUrl;
-      final queryString = queryParams.entries
-          .map((e) => '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value.toString())}')
-          .join('&');
-      final fullUrl = '$baseUrl/recordings/latest_paginated?$queryString';
-      
       try {
-        print('[RecordingRepo] ============================================');
-        print('[RecordingRepo] FETCHING RECORDINGS WITH COURT/COURTROOM FILTER');
-        print('[RecordingRepo] Method: GET');
-        print('[RecordingRepo] Full URL: $fullUrl');
-        print('[RecordingRepo] Base URL: $baseUrl');
-        print('[RecordingRepo] Endpoint: /recordings/latest_paginated');
-        print('[RecordingRepo] Query Parameters:');
-        queryParams.forEach((key, value) {
-          print('[RecordingRepo]   $key = $value');
-        });
-        print('[RecordingRepo] Court: "${effectiveCourt.trim()}"');
-        print('[RecordingRepo] Courtroom: "${effectiveCourtroom.trim()}"');
-        print('[RecordingRepo] Sort: date_stamp DESC (latest first)');
-        print('[RecordingRepo] ============================================');
-        
         final response = await _client.dio.get<Map<String, dynamic>>(
           '/recordings/latest_paginated',
           queryParameters: queryParams,
@@ -193,38 +165,11 @@ class RecordingRepositoryImpl implements RecordingRepository {
             .map((model) => model.toEntity())
             .toList();
         
-        print('[RecordingRepo] ============================================');
-        print('[RecordingRepo] RESPONSE RECEIVED');
-        print('[RecordingRepo] Status Code: ${response.statusCode}');
-        print('[RecordingRepo] Items Count: ${items.length}');
-        print('[RecordingRepo] Total: ${response.data?['total'] ?? 'N/A'}');
-        print('[RecordingRepo] Has More: ${response.data?['has_more'] ?? 'N/A'}');
-        if (items.isNotEmpty) {
-          print('[RecordingRepo] First Item Date: ${items.first.date}');
-          print('[RecordingRepo] Last Item Date: ${items.last.date}');
-        }
-        print('[RecordingRepo] ============================================');
         return items;
       } catch (e) {
         // Fallback to by_court_and_room endpoint and sort client-side
-        print('[RecordingRepo] ============================================');
-        print('[RecordingRepo] PAGINATED ENDPOINT FAILED, USING FALLBACK');
-        print('[RecordingRepo] Error: $e');
-        print('[RecordingRepo] ============================================');
-        
         final courtEndpoint =
             '/recordings/by_court_and_room/$encodedCourt/$encodedRoom';
-        final fallbackUrl = '$baseUrl$courtEndpoint';
-        
-        print('[RecordingRepo] ============================================');
-        print('[RecordingRepo] FETCHING RECORDINGS (FALLBACK ENDPOINT)');
-        print('[RecordingRepo] Method: GET');
-        print('[RecordingRepo] Full URL: $fallbackUrl');
-        print('[RecordingRepo] Endpoint: $courtEndpoint');
-        print('[RecordingRepo] Court: "${effectiveCourt.trim()}"');
-        print('[RecordingRepo] Courtroom: "${effectiveCourtroom.trim()}"');
-        print('[RecordingRepo] Note: Will sort client-side by date (latest first)');
-        print('[RecordingRepo] ============================================');
         
         final response = await _client.dio.get<List<dynamic>>(courtEndpoint);
         final items = (response.data ?? [])
@@ -234,17 +179,6 @@ class RecordingRepositoryImpl implements RecordingRepository {
         
         // Sort by date descending (latest first)
         items.sort((a, b) => b.date.compareTo(a.date));
-        
-        print('[RecordingRepo] ============================================');
-        print('[RecordingRepo] RESPONSE RECEIVED (FALLBACK)');
-        print('[RecordingRepo] Status Code: ${response.statusCode}');
-        print('[RecordingRepo] Items Count: ${items.length}');
-        print('[RecordingRepo] Sorted by date (latest first)');
-        if (items.isNotEmpty) {
-          print('[RecordingRepo] First Item Date: ${items.first.date}');
-          print('[RecordingRepo] Last Item Date: ${items.last.date}');
-        }
-        print('[RecordingRepo] ============================================');
         return items;
       }
     }
@@ -266,52 +200,16 @@ class RecordingRepositoryImpl implements RecordingRepository {
       if (useUserEndpoint) 'user_id': userId,
     };
     
-    // Build the full URL string for logging
-    final baseUrl = _client.dio.options.baseUrl;
-    final queryString = queryParameters.entries
-        .map((e) => '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value.toString())}')
-        .join('&');
-    final fullUrl = '$baseUrl$endpoint?$queryString';
-    
-    print('[RecordingRepo] ============================================');
-    print('[RecordingRepo] FETCHING RECORDINGS');
-    print('[RecordingRepo] Method: GET');
-    print('[RecordingRepo] Full URL: $fullUrl');
-    print('[RecordingRepo] Base URL: $baseUrl');
-    print('[RecordingRepo] Endpoint: $endpoint');
-    print('[RecordingRepo] Query Parameters:');
-    queryParameters.forEach((key, value) {
-      print('[RecordingRepo]   $key = $value');
-    });
-    if (effectiveCourt != null) print('[RecordingRepo] Court: "$effectiveCourt"');
-    if (effectiveCourtroom != null) print('[RecordingRepo] Courtroom: "$effectiveCourtroom"');
-    print('[RecordingRepo] Sort: date_stamp DESC (latest first)');
-    print('[RecordingRepo] Page: $page, PageSize: $pageSize, Offset: $offset');
-    print('[RecordingRepo] ============================================');
-    
     final response = await _client.dio.get<Map<String, dynamic>>(
       endpoint,
       queryParameters: queryParameters,
     );
-    
-    print('[RecordingRepo] ============================================');
-    print('[RecordingRepo] RESPONSE RECEIVED');
-    print('[RecordingRepo] Status Code: ${response.statusCode}');
-    print('[RecordingRepo] Items Count: ${(response.data?['items'] as List<dynamic>? ?? []).length}');
-    print('[RecordingRepo] Total: ${response.data?['total'] ?? 'N/A'}');
-    print('[RecordingRepo] Has More: ${response.data?['has_more'] ?? 'N/A'}');
-    print('[RecordingRepo] ============================================');
 
     final items = (response.data?['items'] as List<dynamic>? ?? [])
         .map((json) => RecordingModel.fromJson(json as Map<String, dynamic>))
         .map((model) => model.toEntity())
         .toList();
 
-    print(
-      '[RecordingRepo] response items=${items.length} '
-      'total=${response.data?['total']} '
-      'has_more=${response.data?['has_more']}',
-    );
     return items;
   }
 

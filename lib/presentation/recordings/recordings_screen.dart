@@ -1514,11 +1514,6 @@ class _CourtFilterSidebarState extends ConsumerState<_CourtFilterSidebar> {
       ]);
       _courts = (results[0] as List<String>)..sort();
       _courtroomsByCourt = results[1] as Map<String, List<String>>;
-      print('[CourtFilter] Loaded ${_courts.length} courts');
-      print('[CourtFilter] Courtrooms by court: ${_courtroomsByCourt.keys.length} courts have courtrooms');
-      for (final entry in _courtroomsByCourt.entries) {
-        print('[CourtFilter] Court "${entry.key}": ${entry.value.length} courtrooms');
-      }
       if (!mounted) return;
       setState(() => _isLoading = false);
     } catch (error) {
