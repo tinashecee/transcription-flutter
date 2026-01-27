@@ -3,7 +3,7 @@
 ; Non-commercial use only
 
 #define MyAppName "Transcriber App"
-#define MyAppVersion "2.1.9"
+#define MyAppVersion "2.1.10"
 #define MyAppPublisher "Soxfort"
 #define MyAppURL "https://www.soxfort.com/"
 #define MyAppExeName "testimony_transcriber.exe"

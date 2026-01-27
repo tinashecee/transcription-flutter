@@ -149,7 +149,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           ),
                         ),
                         child: Text(
-                          'Version ${UpdateManager.appDisplayVersion ?? '2.1.9'}',
+                          'Version ${UpdateManager.appDisplayVersion ?? '2.1.10'}',
                           style: GoogleFonts.roboto(
                             color: Colors.white,
                             fontSize: 14,

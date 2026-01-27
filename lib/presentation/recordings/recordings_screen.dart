@@ -128,7 +128,7 @@ class _RecordingsScreenState extends ConsumerState<RecordingsScreen> {
                         ),
                       ),
                       Text(
-                        'v${UpdateManager.appDisplayVersion ?? '2.1.9'}',
+                        'v${UpdateManager.appDisplayVersion ?? '2.1.10'}',
                         style: GoogleFonts.roboto(
                           color: Colors.white.withOpacity(0.7),
                           fontSize: 11,
