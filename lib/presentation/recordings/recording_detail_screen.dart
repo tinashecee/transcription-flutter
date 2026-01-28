@@ -1,12 +1,11 @@
-import 'dart:io';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:file_selector/file_selector.dart';
 import 'package:dio/dio.dart';
+import 'package:file_selector/file_selector.dart';
 
 import '../comments/comments_panel.dart';
 import '../player/audio_player_controller.dart';
@@ -731,8 +730,7 @@ class _RecordingDetailScreenState
           ? recording.defenseCounsel
           : 'N/A';
 
-      // Use Word-compatible HTML format (Word HTML Filter)
-      // This ensures Microsoft Word properly recognizes and preserves formatting
+      // Build complete HTML document
       final html = '''
 <!DOCTYPE html>
 <html xmlns:o="urn:schemas-microsoft-com:office:office"
@@ -840,39 +838,26 @@ class _RecordingDetailScreenState
 </html>
 ''';
 
-      print('[Export] Opening save dialog...');
-      
-      // Open save dialog
-      final location = await getSaveLocation(
-        suggestedName: 'transcript_$caseNumber.doc',
-        acceptedTypeGroups: [
-          const XTypeGroup(
-            label: 'Word Document',
-            extensions: ['doc', 'html'],
-          ),
-        ],
+      // Prepare metadata for the export
+      final metadata = {
+        'case_number': caseNumber,
+        'title': title,
+        'judge': judge,
+        'date': dateStamp,
+        'prosecution_counsel': prosecution,
+        'defense_counsel': defense,
+      };
+
+      // Use WordExportService to convert HTML to DOCX via Flask API
+      final exportService = ref.read(wordExportServiceProvider);
+      await exportService.exportHtmlToWord(
+        context: context,
+        htmlContent: html,
+        fileName: 'transcript_$caseNumber',
+        metadata: metadata,
       );
       
-      if (location == null) {
-        print('[Export] User cancelled save dialog');
-        return;
-      }
-      
-      print('[Export] Saving to: ${location.path}');
-      
-      // Write file
-      await File(location.path).writeAsString(html);
-      
-      print('[Export] File saved successfully');
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Transcript exported to ${location.path}'),
-            backgroundColor: const Color(0xFF4CAF50),
-          ),
-        );
-      }
+      print('[Export] Export completed successfully');
     } catch (e, stack) {
       print('[Export] Error: $e');
       print('[Export] Stack: $stack');

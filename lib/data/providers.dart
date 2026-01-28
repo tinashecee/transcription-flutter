@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/providers.dart';
 import '../services/auth_session.dart';
+import '../services/word_export_service.dart';
 import 'api/api_client.dart';
 import 'repositories/auth_repository_impl.dart';
 import 'repositories/assignment_repository_impl.dart';
@@ -59,4 +60,11 @@ final transcriptRepositoryProvider = Provider<TranscriptRepositoryImpl>((ref) {
 
 final updateServiceProvider = Provider<UpdateService>((ref) {
   return UpdateService(ref.watch(apiClientProvider));
+});
+
+final wordExportServiceProvider = Provider<WordExportService>((ref) {
+  final apiClient = ref.watch(apiClientProvider);
+  return WordExportService(
+    dio: apiClient.dio,
+  );
 });
