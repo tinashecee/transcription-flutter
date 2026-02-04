@@ -187,6 +187,60 @@ class TranscriptController extends StateNotifier<TranscriptState> {
     }
   }
 
+  /// Replace the entire editor content with HTML content
+  /// This preserves undo history so users can undo the import
+  Future<void> replaceContent(String html) async {
+    try {
+      _logger.info('[TranscriptController] Replacing content with HTML (${html.length} chars)');
+
+      final controller = state.controller;
+      final currentDocument = controller.document;
+      final currentLength = currentDocument.length;
+
+      // Convert HTML to Delta
+      final newDelta = _htmlToDelta(html);
+      _logger.info('[TranscriptController] Converted to delta: ${newDelta.length} operations');
+
+      // Create a change Delta that:
+      // 1. Retains 0 (start of document)
+      // 2. Deletes all current content
+      // 3. Inserts the new content
+      final doc = Document();
+      final change = doc.toDelta();
+      change.retain(0);
+      change.delete(currentLength);
+      
+      // Add all insert operations from the new delta
+      for (final op in newDelta.toList()) {
+        if (op.isInsert) {
+          change.insert(op.data, op.attributes);
+        } else if (op.isRetain) {
+          change.retain(op.length, op.attributes);
+        } else if (op.isDelete) {
+          change.delete(op.length);
+        }
+      }
+
+      // Compose the change with the document
+      // Using ChangeSource.local ensures it's recorded in undo history
+      currentDocument.compose(change, ChangeSource.local);
+      
+      // Reset selection to the beginning
+      controller.updateSelection(
+        const TextSelection.collapsed(offset: 0),
+        ChangeSource.local,
+      );
+
+      _logger.info('[TranscriptController] Content replaced, undo history preserved');
+    } catch (error, stack) {
+      _logger.severe('[TranscriptController] Replace content failed', error, stack);
+      state = state.copyWith(
+        errorMessage: 'Failed to replace content: ${error.toString()}',
+      );
+      rethrow;
+    }
+  }
+
   @override
   void dispose() {
     _logger.info('[TranscriptController] Disposing controller');

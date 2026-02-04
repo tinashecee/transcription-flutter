@@ -96,7 +96,7 @@ class _RecordingDetailScreenState
               style: GoogleFonts.roboto(fontWeight: FontWeight.w600),
             ),
             Text(
-              'v${UpdateManager.appDisplayVersion ?? '2.1.10'}',
+              'v${UpdateManager.appDisplayVersion ?? '2.1.11'}',
               style: GoogleFonts.roboto(
                 fontSize: 11,
                 fontWeight: FontWeight.w500,
@@ -358,6 +358,21 @@ class _RecordingDetailScreenState
                                     backgroundColor: isAssignedToMe
                                         ? const Color(0xFF2E7D32)
                                         : Colors.grey,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 8,
+                                    ),
+                                    textStyle: const TextStyle(fontSize: 12),
+                                  ),
+                                ),
+                                // Import - only enabled if assigned
+                                OutlinedButton.icon(
+                                  onPressed: isAssignedToMe
+                                      ? () => _importWordDocument()
+                                      : null,
+                                  icon: const Icon(Icons.file_download, size: 14),
+                                  label: const Text('Import'),
+                                  style: OutlinedButton.styleFrom(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 10,
                                       vertical: 8,
@@ -866,6 +881,42 @@ class _RecordingDetailScreenState
           SnackBar(
             content: Text('Failed to export: $e'),
             backgroundColor: const Color(0xFFD32F2F),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _importWordDocument() async {
+    try {
+      final importService = ref.read(wordImportServiceProvider);
+      final html = await importService.importWordToHtml(context: context);
+      
+      // If user cancelled, html will be null - just return silently
+      if (html == null) {
+        return;
+      }
+      
+      // Replace content in transcript controller
+      await ref.read(transcriptControllerProvider.notifier).replaceContent(html);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Word document imported successfully'),
+            backgroundColor: Color(0xFF4CAF50),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      print('[Import] Error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to import Word document: ${e.toString().replaceAll('Exception: ', '')}'),
+            backgroundColor: const Color(0xFFD32F2F),
+            duration: const Duration(seconds: 5),
           ),
         );
       }
